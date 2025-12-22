@@ -74,7 +74,8 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
     };
 
     loadMessages();
-  }, [userId, setMessages, markAsRead]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]); // Only userId dependency to prevent infinite loop
 
   // Load other user info from conversations or fetch from API
   useEffect(() => {
@@ -123,6 +124,7 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
   // Reset loaded ref when userId changes
   useEffect(() => {
     loadedRef.current = false;
+    setLoading(true);
   }, [userId]);
 
   // ESC key handler to close chat
