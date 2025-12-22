@@ -1,131 +1,142 @@
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080';
+import EventEmitter from 'eventemitter3';
 
-export type WSMessageType = 
-  | 'message' 
-  | 'message_sent' 
-  | 'typing' 
-  | 'receipt' 
-  | 'user_status';
-
-export interface WSMessage {
-  type: WSMessageType;
-  payload: any;
-}
-
-export class WebSocketClient {
+export class WebSocketClient extends EventEmitter {
   private ws: WebSocket | null = null;
+  private token: string;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
-  private messageHandlers: Map<WSMessageType, Set<(payload: any) => void>> = new Map();
+  private reconnectDelay = 1000;
 
-  constructor(private token: string) {
-    console.log('WebSocketClient created with token:', token ? 'present' : 'missing');
+  constructor(token: string) {
+    super();
+    this.token = token;
   }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080';
+      const url = `${wsUrl}/ws/chat?token=${this.token}`;
+      
+      console.log('Connecting to WebSocket:', url);
+
       try {
-        const wsUrl = `${WS_URL}/ws/chat?token=${encodeURIComponent(this.token)}`;
-        console.log('Connecting to WebSocket:', wsUrl.replace(this.token, '***'));
-        
-        this.ws = new WebSocket(wsUrl);
+        this.ws = new WebSocket(url);
 
         this.ws.onopen = () => {
-          console.log('WebSocket connected successfully');
+          console.log('✅ WebSocket connected successfully');
           this.reconnectAttempts = 0;
           resolve();
         };
 
         this.ws.onmessage = (event) => {
           try {
-            const message: WSMessage = JSON.parse(event.data);
-            console.log('WebSocket message received:', message.type);
-            this.handleMessage(message);
+            console.log('📩 WebSocket raw message:', event.data);
+            
+            // Split by newline in case multiple messages are sent together
+            const messages = event.data.trim().split('\n').filter((line: string) => line.trim());
+            
+            messages.forEach((msgStr: string) => {
+              try {
+                const data = JSON.parse(msgStr);
+                console.log('📦 WebSocket parsed message:', data);
+                
+                // Emit event based on message type
+                if (data.type) {
+                  console.log(`🔔 Emitting event: ${data.type}`, data.payload);
+                  this.emit(data.type, data.payload);
+                } else {
+                  console.warn('Message without type:', data);
+                }
+              } catch (parseError) {
+                console.error('Failed to parse individual message:', msgStr, parseError);
+              }
+            });
           } catch (error) {
-            console.error('Failed to parse WebSocket message:', error);
+            console.error('Failed to process WebSocket message:', error, 'Raw data:', event.data);
           }
         };
 
         this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
+          // console.error('❌ WebSocket error:', error);
           reject(error);
         };
 
         this.ws.onclose = (event) => {
-          console.log('WebSocket disconnected:', event.code, event.reason);
-          this.attemptReconnect();
+          console.log('🔌 WebSocket closed:', event.code, event.reason);
+          this.handleReconnect();
         };
       } catch (error) {
-        console.error('WebSocket connection error:', error);
+        console.error('Failed to create WebSocket:', error);
         reject(error);
       }
     });
   }
 
-  private handleMessage(message: WSMessage) {
-    const handlers = this.messageHandlers.get(message.type);
-    if (handlers) {
-      handlers.forEach(handler => handler(message.payload));
-    }
-  }
-
-  on(type: WSMessageType, handler: (payload: any) => void) {
-    if (!this.messageHandlers.has(type)) {
-      this.messageHandlers.set(type, new Set());
-    }
-    this.messageHandlers.get(type)!.add(handler);
-  }
-
-  off(type: WSMessageType, handler: (payload: any) => void) {
-    const handlers = this.messageHandlers.get(type);
-    if (handlers) {
-      handlers.delete(handler);
-    }
-  }
-
-  send(type: WSMessageType, payload: any) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('Sending WebSocket message:', type, payload);
-      this.ws.send(JSON.stringify({ type, payload }));
+  private handleReconnect() {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      console.log(`🔄 Reconnecting... Attempt ${this.reconnectAttempts}`);
+      
+      setTimeout(() => {
+        this.connect().catch(console.error);
+      }, this.reconnectDelay * this.reconnectAttempts);
     } else {
-      console.warn('WebSocket is not connected, cannot send:', type);
+      console.error('❌ Max reconnection attempts reached');
     }
   }
 
   sendMessage(receiverId: number, content: string) {
-    this.send('message', { receiver_id: receiverId, content });
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('❌ WebSocket is not connected');
+      return;
+    }
+
+    const message = {
+      type: 'message',
+      payload: {
+        receiver_id: receiverId,
+        content: content,
+      },
+    };
+
+    console.log('📤 Sending message:', message);
+    this.ws.send(JSON.stringify(message));
   }
 
   sendTyping(receiverId: number, isTyping: boolean) {
-    this.send('typing', { receiver_id: receiverId, is_typing: isTyping });
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      type: 'typing',
+      payload: {
+        receiver_id: receiverId,
+        is_typing: isTyping,
+      },
+    };
+
+    this.ws.send(JSON.stringify(message));
   }
 
   sendReceipt(messageId: number, status: 'delivered' | 'read') {
-    this.send('receipt', { message_id: messageId, status });
-  }
-
-  private attemptReconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      const delay = 1000 * this.reconnectAttempts;
-      
-      console.log(`Attempting to reconnect in ${delay}ms... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-      
-      this.reconnectTimeout = setTimeout(() => {
-        this.connect().catch(() => {
-          // Will retry again if connection fails
-        });
-      }, delay);
-    } else {
-      console.error('Max reconnection attempts reached');
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
     }
+
+    const message = {
+      type: 'receipt',
+      payload: {
+        message_id: messageId,
+        status: status,
+      },
+    };
+
+    console.log('📬 Sending receipt:', message);
+    this.ws.send(JSON.stringify(message));
   }
 
   disconnect() {
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;

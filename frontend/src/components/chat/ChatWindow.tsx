@@ -19,6 +19,7 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
   const currentUser = useAuthStore((state) => state.user);
   const messages = useChatStore((state) => state.messages.get(userId) || []);
   const setMessages = useChatStore((state) => state.setMessages);
+  const conversations = useChatStore((state) => state.conversations);
   
   const { sendMessage, sendTyping, markAsRead, typingUsers } = useWebSocket(
     useAuthStore((state) => state.accessToken)
@@ -31,6 +32,18 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const loadedRef = useRef(false);
 
+  // Helper function to format time
+  const formatTime = (lastSeen?: string) => {
+    if (!lastSeen) return '';
+    
+    const date = new Date(lastSeen);
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  };
+
   // Load messages only once
   useEffect(() => {
     if (loadedRef.current) return;
@@ -40,7 +53,6 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
         setLoading(true);
         const response = await api.get(`/chat/messages?user_id=${userId}`);
         const msgs = response.data.data || [];
-        // Backend returns ASC order (oldest first), no need to reverse
         setMessages(userId, msgs);
         
         // Mark messages as read
@@ -49,6 +61,9 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
             markAsRead(msg.id);
           }
         });
+        
+        // Clear unread count in conversation list
+        useChatStore.getState().markAsRead(userId);
         
         loadedRef.current = true;
       } catch (error) {
@@ -59,24 +74,46 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
     };
 
     loadMessages();
-  }, [userId]);
+  }, [userId, setMessages, markAsRead]);
 
-  // Load other user info
+  // Load other user info from conversations or fetch from API
   useEffect(() => {
-    const loadUserInfo = async () => {
-      try {
-        setOtherUser({
-          id: userId,
-          name: `User ${userId}`,
-          status: 'online',
-        });
-      } catch (error) {
-        console.error('Failed to load user info:', error);
-      }
-    };
-
-    loadUserInfo();
-  }, [userId]);
+    const conv = conversations.find(c => c.user_id === userId);
+    if (conv) {
+      setOtherUser({
+        id: conv.user_id,
+        name: conv.name,
+        status: conv.status,
+        last_seen: conv.last_seen,
+        avatar_url: conv.avatar_url,
+      });
+    } else {
+      // Fetch user info if not in conversations
+      const fetchUserInfo = async () => {
+        try {
+          const response = await api.get(`/chat/search?q=${userId}`);
+          const users = response.data.data || [];
+          const user = users.find((u: any) => u.id === userId);
+          if (user) {
+            setOtherUser({
+              id: user.id,
+              name: user.name,
+              status: user.status,
+              last_seen: user.last_seen,
+            });
+          }
+        } catch (error) {
+          console.error('Failed to fetch user info:', error);
+          setOtherUser({
+            id: userId,
+            name: `User ${userId}`,
+            status: 'offline',
+          });
+        }
+      };
+      fetchUserInfo();
+    }
+  }, [userId, conversations]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -102,16 +139,12 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
-
-    // Send typing indicator
     sendTyping(userId, true);
 
-    // Clear previous timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Stop typing after 3 seconds
     typingTimeoutRef.current = setTimeout(() => {
       sendTyping(userId, false);
     }, 3000);
@@ -128,6 +161,15 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
+  };
+
+  const getStatusText = () => {
+    if (!otherUser) return '';
+    if (otherUser.status === 'online') return 'Online';
+    
+    // For offline, show time instead of relative time
+    const time = formatTime(otherUser.last_seen);
+    return time ? `Offline - ${time}` : 'Offline';
   };
 
   if (loading) {
@@ -152,9 +194,9 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
             )}
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900">{otherUser?.name}</h3>
+            <h3 className="font-semibold text-gray-900">{otherUser?.name || 'Loading...'}</h3>
             <p className="text-xs text-gray-500">
-              {otherUser?.status === 'online' ? 'Online' : 'Offline'}
+              {getStatusText()}
             </p>
           </div>
         </div>

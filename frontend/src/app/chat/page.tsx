@@ -22,6 +22,7 @@ export default function ChatPage() {
   const setConversations = useChatStore((state) => state.setConversations);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const setActiveConversation = useChatStore((state) => state.setActiveConversation);
+  const markAsRead = useChatStore((state) => state.markAsRead);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -113,7 +114,10 @@ export default function ChatPage() {
             <ConversationList
               conversations={filteredConversations}
               activeId={activeConversationId}
-              onSelect={setActiveConversation}
+              onSelect={(userId) => {
+                setActiveConversation(userId);
+                markAsRead(userId);
+              }}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-32 text-gray-400">
@@ -148,7 +152,10 @@ export default function ChatPage() {
       {/* Chat Window */}
       <div className="flex-1">
         {activeConversationId ? (
-          <ChatWindow userId={activeConversationId} />
+          <ChatWindow 
+            userId={activeConversationId} 
+            onClose={() => setActiveConversation(null)}
+          />
         ) : (
           <div className="flex items-center justify-center h-full bg-gray-50">
             <div className="text-center">
