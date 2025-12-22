@@ -37,9 +37,13 @@ func main() {
 	// Initialize services
 	authService := auth.NewService(db.DB, cfg)
 
+	// Initialize chat hub
+	hub := chat.NewHub(db.DB)
+	go hub.Run()
+
 	// Initialize handlers
 	authHandler := auth.NewHandler(authService)
-	chatHandler := chat.NewHandler(db.DB, cfg)
+	chatHandler := chat.NewHandler(hub, db.DB)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -79,12 +83,14 @@ func main() {
 				r.Get("/messages", chatHandler.GetMessages)
 				r.Get("/conversations", chatHandler.GetConversations)
 				r.Get("/search", chatHandler.SearchUsers)
+				r.Delete("/conversations/{userId}", chatHandler.DeleteConversation)
 			})
 		})
 	})
 
-	// WebSocket routes (auth via query token)
+	// WebSocket routes (protected with auth middleware)
 	r.Route("/ws", func(r chi.Router) {
+		r.Use(auth.AuthMiddleware(cfg))
 		r.Get("/chat", chatHandler.HandleWebSocket)
 	})
 

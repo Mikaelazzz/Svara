@@ -14,6 +14,8 @@ interface ChatState {
   markAsRead: (userId: number) => void;
   updateConversationWithMessage: (userId: number, userName: string, message: Message) => void;
   updateUserStatus: (userId: number, status: 'online' | 'offline') => void;
+  pinConversation: (userId: number) => void;
+  deleteConversation: (userId: number) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -22,6 +24,27 @@ export const useChatStore = create<ChatState>((set) => ({
   messages: new Map(),
 
   setConversations: (conversations) => {
+    // Restore pinned state from localStorage
+    if (typeof window !== 'undefined') {
+      const pinnedIdsStr = localStorage.getItem('pinned_conversations');
+      if (pinnedIdsStr) {
+        try {
+          const pinnedIds: number[] = JSON.parse(pinnedIdsStr);
+          conversations = conversations.map(conv => ({
+            ...conv,
+            is_pinned: pinnedIds.includes(conv.user_id)
+          }));
+          
+          // Sort: pinned first
+          const pinnedConvs = conversations.filter(c => c.is_pinned);
+          const unpinnedConvs = conversations.filter(c => !c.is_pinned);
+          conversations = [...pinnedConvs, ...unpinnedConvs];
+        } catch (error) {
+          console.error('Failed to restore pinned conversations:', error);
+        }
+      }
+    }
+    
     set({ conversations });
   },
 
@@ -90,10 +113,19 @@ export const useChatStore = create<ChatState>((set) => ({
               }
             : conv
         );
-        // Move updated conversation to top
+        // Move updated conversation to top (unless pinned)
         const updatedConv = conversations.find(c => c.user_id === userId);
-        const otherConvs = conversations.filter(c => c.user_id !== userId);
-        return { conversations: updatedConv ? [updatedConv, ...otherConvs] : conversations };
+        const pinnedConvs = conversations.filter(c => c.is_pinned && c.user_id !== userId);
+        const otherConvs = conversations.filter(c => !c.is_pinned && c.user_id !== userId);
+        
+        if (updatedConv) {
+          if (updatedConv.is_pinned) {
+            return { conversations: [...pinnedConvs, updatedConv, ...otherConvs] };
+          } else {
+            return { conversations: [...pinnedConvs, updatedConv, ...otherConvs] };
+          }
+        }
+        return { conversations };
       } else {
         // Add new conversation
         const newConv: Conversation = {
@@ -102,8 +134,11 @@ export const useChatStore = create<ChatState>((set) => ({
           status: 'online',
           last_message: message,
           unread_count: message.sender_id === userId ? 1 : 0,
+          is_pinned: false,
         };
-        return { conversations: [newConv, ...state.conversations] };
+        const pinnedConvs = state.conversations.filter(c => c.is_pinned);
+        const otherConvs = state.conversations.filter(c => !c.is_pinned);
+        return { conversations: [...pinnedConvs, newConv, ...otherConvs] };
       }
     });
   },
@@ -120,6 +155,42 @@ export const useChatStore = create<ChatState>((set) => ({
           : conv
       );
       return { conversations };
+    });
+  },
+
+  pinConversation: (userId) => {
+    set((state) => {
+      const conversations = state.conversations.map(conv =>
+        conv.user_id === userId ? { ...conv, is_pinned: !conv.is_pinned } : conv
+      );
+      
+      // Sort: pinned first, then unpinned
+      const pinnedConvs = conversations.filter(c => c.is_pinned);
+      const unpinnedConvs = conversations.filter(c => !c.is_pinned);
+      
+      const sortedConversations = [...pinnedConvs, ...unpinnedConvs];
+      
+      // Save pinned conversation IDs to localStorage
+      if (typeof window !== 'undefined') {
+        const pinnedIds = pinnedConvs.map(c => c.user_id);
+        localStorage.setItem('pinned_conversations', JSON.stringify(pinnedIds));
+      }
+      
+      return { conversations: sortedConversations };
+    });
+  },
+
+  deleteConversation: (userId) => {
+    set((state) => {
+      const conversations = state.conversations.filter(c => c.user_id !== userId);
+      const newMessages = new Map(state.messages);
+      newMessages.delete(userId);
+      
+      return { 
+        conversations,
+        messages: newMessages,
+        activeConversationId: state.activeConversationId === userId ? null : state.activeConversationId
+      };
     });
   },
 }));

@@ -46,3 +46,24 @@ type UserStatus struct {
 	Status   string    `json:"status"` // "online" or "offline"
 	LastSeen time.Time `json:"last_seen,omitempty"`
 }
+
+// Conversation represents a conversation with another user
+type Conversation struct {
+	UserID      int      `json:"user_id"`
+	Name        string   `json:"name"`
+	AvatarURL   *string  `json:"avatar_url,omitempty"`
+	Status      string   `json:"status"`
+	LastSeen    *string  `json:"last_seen,omitempty"`
+	LastMessage *Message `json:"last_message,omitempty"`
+	UnreadCount int      `json:"unread_count"`
+}
+
+// User represents a user in the system
+type User struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Email    string `json:"email,omitempty"`
+	Phone    string `json:"phone,omitempty"`
+	Status   string `json:"status"`
+	LastSeen string `json:"last_seen,omitempty"`
+}

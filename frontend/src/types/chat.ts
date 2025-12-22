@@ -17,6 +17,7 @@ export interface Conversation {
   last_seen?: string;
   last_message?: Message;
   unread_count: number;
+  is_pinned?: boolean;
 }
 
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read';
