@@ -39,7 +39,7 @@ func main() {
 
 	// Initialize handlers
 	authHandler := auth.NewHandler(authService)
-	chatHandler := chat.NewHandler(db.DB)
+	chatHandler := chat.NewHandler(db.DB, cfg)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -74,20 +74,17 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.AuthMiddleware(cfg))
 
-			// User routes will be added here
-			// WebSocket routes will be added here
-
 			// Chat routes
 			r.Route("/chat", func(r chi.Router) {
 				r.Get("/messages", chatHandler.GetMessages)
 				r.Get("/conversations", chatHandler.GetConversations)
+				r.Get("/search", chatHandler.SearchUsers)
 			})
 		})
 	})
 
-	// WebSocket routes (protected)
+	// WebSocket routes (auth via query token)
 	r.Route("/ws", func(r chi.Router) {
-		r.Use(auth.AuthMiddleware(cfg))
 		r.Get("/chat", chatHandler.HandleWebSocket)
 	})
 
