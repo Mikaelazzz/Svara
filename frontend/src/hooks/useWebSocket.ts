@@ -12,6 +12,7 @@ export function useWebSocket(token: string | null) {
   const addMessage = useChatStore((state) => state.addMessage);
   const updateMessage = useChatStore((state) => state.updateMessage);
   const updateConversationWithMessage = useChatStore((state) => state.updateConversationWithMessage);
+  const updateConversationLastMessage = useChatStore((state) => state.updateConversationLastMessage);
   const updateUserStatus = useChatStore((state) => state.updateUserStatus);
   const currentUserId = useAuthStore((state) => state.user?.id);
 
@@ -49,7 +50,8 @@ export function useWebSocket(token: string | null) {
         console.log('Updating conversation with message from other user');
         updateConversationWithMessage(otherUserId, `User ${otherUserId}`, payload);
       } else {
-        console.log('Skipping conversation update - message sent by current user');
+        console.log('Updating last message only - message sent by current user');
+        updateConversationLastMessage(otherUserId, payload);
       }
       
       console.log('Sending delivery receipt');
@@ -60,8 +62,8 @@ export function useWebSocket(token: string | null) {
     client.on('message_sent', (payload: Message) => {
       console.log('✅ Message sent confirmation:', payload);
       addMessage(payload);
-      // Don't update conversation to prevent unread badge on sent messages
-      // updateConversationWithMessage(payload.receiver_id, `User ${payload.receiver_id}`, payload);
+      // Update conversation last message for sender (without incrementing unread)
+      updateConversationLastMessage(payload.receiver_id, payload);
     });
 
     // Handle typing indicators
@@ -101,7 +103,7 @@ export function useWebSocket(token: string | null) {
       client.disconnect();
       setIsConnected(false);
     };
-  }, [token, addMessage, updateMessage, updateConversationWithMessage, updateUserStatus, currentUserId]);
+  }, [token, addMessage, updateMessage, updateConversationWithMessage, updateConversationLastMessage, updateUserStatus, currentUserId]);
 
   const sendMessage = (receiverId: number, content: string) => {
     console.log('Sending message via WebSocket:', { receiverId, content });

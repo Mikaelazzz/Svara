@@ -13,6 +13,7 @@ interface ChatState {
   setMessages: (userId: number, messages: Message[]) => void;
   markAsRead: (userId: number) => void;
   updateConversationWithMessage: (userId: number, userName: string, message: Message) => void;
+  updateConversationLastMessage: (userId: number, message: Message) => void;
   updateUserStatus: (userId: number, status: 'online' | 'offline') => void;
   pinConversation: (userId: number) => void;
   deleteConversation: (userId: number) => void;
@@ -139,6 +140,38 @@ export const useChatStore = create<ChatState>((set) => ({
         const pinnedConvs = state.conversations.filter(c => c.is_pinned);
         const otherConvs = state.conversations.filter(c => !c.is_pinned);
         return { conversations: [...pinnedConvs, newConv, ...otherConvs] };
+      }
+    });
+  },
+
+  // Update only last message without changing unread count (for sent messages)
+  updateConversationLastMessage: (userId, message) => {
+    set((state) => {
+      // Update the conversation's last message
+      const updatedConversations = state.conversations.map(conv =>
+        conv.user_id === userId
+          ? { ...conv, last_message: message }
+          : conv
+      );
+      
+      // Find the updated conversation
+      const targetConv = updatedConversations.find(c => c.user_id === userId);
+      
+      if (!targetConv) {
+        return { conversations: updatedConversations };
+      }
+      
+      // Separate pinned and unpinned conversations
+      const pinnedConvs = updatedConversations.filter(c => c.is_pinned && c.user_id !== userId);
+      const otherConvs = updatedConversations.filter(c => !c.is_pinned && c.user_id !== userId);
+      
+      // Move to top based on pinned status
+      if (targetConv.is_pinned) {
+        // If pinned, put at top of pinned section
+        return { conversations: [targetConv, ...pinnedConvs, ...otherConvs] };
+      } else {
+        // If not pinned, put at top of unpinned section
+        return { conversations: [...pinnedConvs, targetConv, ...otherConvs] };
       }
     });
   },
