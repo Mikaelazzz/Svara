@@ -15,16 +15,16 @@ type User struct {
 }
 
 type RegisterRequest struct {
-	Phone    *string `json:"phone,omitempty"`
-	Email    *string `json:"email,omitempty"`
-	Password string  `json:"password"`
-	Name     string  `json:"name"`
+	Phone    string `json:"phone,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Password string `json:"password"`
+	Name     string `json:"name"`
 }
 
 type LoginRequest struct {
-	Phone    *string `json:"phone,omitempty"`
-	Email    *string `json:"email,omitempty"`
-	Password string  `json:"password"`
+	Phone    string `json:"phone,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Password string `json:"password"`
 }
 
 type AuthResponse struct {

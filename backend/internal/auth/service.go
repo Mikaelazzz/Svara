@@ -23,18 +23,18 @@ func NewService(db *sql.DB, cfg *config.Config) *Service {
 
 func (s *Service) Register(req RegisterRequest) (*AuthResponse, error) {
 	// Validate input
-	if req.Phone == nil && req.Email == nil {
+	if req.Phone == "" && req.Email == "" {
 		return nil, errors.New("phone or email is required")
 	}
 
-	if req.Phone != nil {
-		*req.Phone = utils.NormalizePhone(*req.Phone)
-		if !utils.ValidatePhone(*req.Phone) {
+	if req.Phone != "" {
+		req.Phone = utils.NormalizePhone(req.Phone)
+		if !utils.ValidatePhone(req.Phone) {
 			return nil, errors.New("invalid phone number")
 		}
 	}
 
-	if req.Email != nil && !utils.ValidateEmail(*req.Email) {
+	if req.Email != "" && !utils.ValidateEmail(req.Email) {
 		return nil, errors.New("invalid email address")
 	}
 
@@ -48,11 +48,20 @@ func (s *Service) Register(req RegisterRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
+	// Prepare values for database
+	var phone, email interface{}
+	if req.Phone != "" {
+		phone = req.Phone
+	}
+	if req.Email != "" {
+		email = req.Email
+	}
+
 	// Insert user
 	result, err := s.db.Exec(
 		`INSERT INTO users (phone, email, password_hash, name, status, created_at) 
 		 VALUES (?, ?, ?, ?, 'offline', ?)`,
-		req.Phone, req.Email, passwordHash, req.Name, time.Now(),
+		phone, email, passwordHash, req.Name, time.Now(),
 	)
 	if err != nil {
 		return nil, errors.New("user already exists or database error")
@@ -89,18 +98,18 @@ func (s *Service) Register(req RegisterRequest) (*AuthResponse, error) {
 
 func (s *Service) Login(req LoginRequest) (*AuthResponse, error) {
 	// Validate input
-	if req.Phone == nil && req.Email == nil {
+	if req.Phone == "" && req.Email == "" {
 		return nil, errors.New("phone or email is required")
 	}
 
 	var user *User
 	var err error
 
-	if req.Phone != nil {
-		*req.Phone = utils.NormalizePhone(*req.Phone)
-		user, err = s.getUserByPhone(*req.Phone)
+	if req.Phone != "" {
+		req.Phone = utils.NormalizePhone(req.Phone)
+		user, err = s.getUserByPhone(req.Phone)
 	} else {
-		user, err = s.getUserByEmail(*req.Email)
+		user, err = s.getUserByEmail(req.Email)
 	}
 
 	if err != nil {
