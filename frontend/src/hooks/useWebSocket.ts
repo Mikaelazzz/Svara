@@ -44,8 +44,13 @@ export function useWebSocket(token: string | null) {
       console.log('Adding message to store:', payload);
       addMessage(payload);
       
-      console.log('Updating conversation with message');
-      updateConversationWithMessage(otherUserId, `User ${otherUserId}`, payload);
+      // Only update conversation if message is FROM another user (not sent by current user)
+      if (payload.sender_id !== currentUserId) {
+        console.log('Updating conversation with message from other user');
+        updateConversationWithMessage(otherUserId, `User ${otherUserId}`, payload);
+      } else {
+        console.log('Skipping conversation update - message sent by current user');
+      }
       
       console.log('Sending delivery receipt');
       client.sendReceipt(payload.id, 'delivered');
@@ -55,7 +60,8 @@ export function useWebSocket(token: string | null) {
     client.on('message_sent', (payload: Message) => {
       console.log('✅ Message sent confirmation:', payload);
       addMessage(payload);
-      updateConversationWithMessage(payload.receiver_id, `User ${payload.receiver_id}`, payload);
+      // Don't update conversation to prevent unread badge on sent messages
+      // updateConversationWithMessage(payload.receiver_id, `User ${payload.receiver_id}`, payload);
     });
 
     // Handle typing indicators
