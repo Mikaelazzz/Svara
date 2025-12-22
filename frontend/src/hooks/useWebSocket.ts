@@ -12,6 +12,7 @@ export function useWebSocket(token: string | null) {
   const addMessage = useChatStore((state) => state.addMessage);
   const updateMessage = useChatStore((state) => state.updateMessage);
   const updateConversationWithMessage = useChatStore((state) => state.updateConversationWithMessage);
+  const updateUserStatus = useChatStore((state) => state.updateUserStatus);
   const currentUserId = useAuthStore((state) => state.user?.id);
 
   useEffect(() => {
@@ -20,11 +21,9 @@ export function useWebSocket(token: string | null) {
       return;
     }
 
-    // Initialize WebSocket client
     const client = new WebSocketClient(token);
     wsClient.current = client;
 
-    // Connect
     client.connect()
       .then(() => setIsConnected(true))
       .catch((error) => {
@@ -35,15 +34,9 @@ export function useWebSocket(token: string | null) {
     // Handle incoming messages
     client.on('message', (payload: Message) => {
       console.log('Received message:', payload);
-      
-      // Add message to store
       const otherUserId = payload.sender_id === currentUserId ? payload.receiver_id : payload.sender_id;
       addMessage(payload);
-      
-      // Update conversation list with user name from message (temporary)
       updateConversationWithMessage(otherUserId, `User ${otherUserId}`, payload);
-      
-      // Send delivery receipt
       client.sendReceipt(payload.id, 'delivered');
     });
 
@@ -51,8 +44,6 @@ export function useWebSocket(token: string | null) {
     client.on('message_sent', (payload: Message) => {
       console.log('Message sent confirmation:', payload);
       addMessage(payload);
-      
-      // Update conversation list
       updateConversationWithMessage(payload.receiver_id, `User ${payload.receiver_id}`, payload);
     });
 
@@ -77,9 +68,10 @@ export function useWebSocket(token: string | null) {
       });
     });
 
-    // Handle user status
+    // Handle user status updates (REAL-TIME)
     client.on('user_status', (payload: { user_id: number; status: string }) => {
-      console.log('User status:', payload);
+      console.log('User status update:', payload);
+      updateUserStatus(payload.user_id, payload.status as 'online' | 'offline');
     });
 
     // Cleanup
@@ -87,7 +79,7 @@ export function useWebSocket(token: string | null) {
       client.disconnect();
       setIsConnected(false);
     };
-  }, [token, addMessage, updateMessage, updateConversationWithMessage, currentUserId]);
+  }, [token, addMessage, updateMessage, updateConversationWithMessage, updateUserStatus, currentUserId]);
 
   const sendMessage = (receiverId: number, content: string) => {
     wsClient.current?.sendMessage(receiverId, content);

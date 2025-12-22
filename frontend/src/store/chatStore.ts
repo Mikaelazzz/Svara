@@ -7,12 +7,13 @@ interface ChatState {
   messages: Map<number, Message[]>;
   
   setConversations: (conversations: Conversation[]) => void;
-  setActiveConversation: (userId: number) => void;
+  setActiveConversation: (userId: number | null) => void;
   addMessage: (message: Message) => void;
   updateMessage: (messageId: number, updates: Partial<Message>) => void;
   setMessages: (userId: number, messages: Message[]) => void;
   markAsRead: (userId: number) => void;
   updateConversationWithMessage: (userId: number, userName: string, message: Message) => void;
+  updateUserStatus: (userId: number, status: 'online' | 'offline') => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -104,6 +105,21 @@ export const useChatStore = create<ChatState>((set) => ({
         };
         return { conversations: [newConv, ...state.conversations] };
       }
+    });
+  },
+
+  updateUserStatus: (userId, status) => {
+    set((state) => {
+      const conversations = state.conversations.map(conv =>
+        conv.user_id === userId 
+          ? { 
+              ...conv, 
+              status,
+              last_seen: status === 'offline' ? new Date().toISOString() : conv.last_seen
+            } 
+          : conv
+      );
+      return { conversations };
     });
   },
 }));

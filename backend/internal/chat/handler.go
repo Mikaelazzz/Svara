@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/yourusername/svara/internal/auth"
@@ -38,7 +39,6 @@ func NewHandler(db *sql.DB, cfg *config.Config) *Handler {
 }
 
 func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// Get token from query parameter (WebSocket doesn't support custom headers)
 	token := r.URL.Query().Get("token")
 	log.Printf("WebSocket connection attempt, token present: %v", token != "")
 
@@ -48,7 +48,6 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate token
 	claims, err := utils.ValidateToken(token, h.config.JWTSecret)
 	if err != nil {
 		log.Printf("WebSocket auth failed: invalid token - %v", err)
@@ -57,6 +56,13 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("WebSocket auth success for user: %d", claims.UserID)
+
+	// Update user status to online
+	_, err = h.db.Exec("UPDATE users SET status = 'online', last_seen = ? WHERE id = ?",
+		time.Now().Format(time.RFC3339), claims.UserID)
+	if err != nil {
+		log.Printf("Failed to update user status: %v", err)
+	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -129,6 +135,7 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 		Name        string  `json:"name"`
 		AvatarURL   *string `json:"avatar_url"`
 		Status      string  `json:"status"`
+		LastSeen    *string `json:"last_seen"`
 		LastMessage *struct {
 			ID         int    `json:"id"`
 			SenderID   int    `json:"sender_id"`
@@ -141,7 +148,6 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Fetching conversations for user: %d", claims.UserID)
 
-	// Get unique users that have chatted with current user
 	userRows, err := h.db.Query(
 		`SELECT DISTINCT
 			CASE 
@@ -169,11 +175,11 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 
 		var conv ConversationResponse
 
-		// Get user info
+		// Get user info with last_seen
 		err := h.db.QueryRow(
-			`SELECT id, name, avatar_url, status FROM users WHERE id = ?`,
+			`SELECT id, name, avatar_url, status, last_seen FROM users WHERE id = ?`,
 			otherUserID,
-		).Scan(&conv.UserID, &conv.Name, &conv.AvatarURL, &conv.Status)
+		).Scan(&conv.UserID, &conv.Name, &conv.AvatarURL, &conv.Status, &conv.LastSeen)
 
 		if err != nil {
 			log.Printf("Failed to get user info for %d: %v", otherUserID, err)
@@ -226,7 +232,6 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, "Conversations retrieved", conversations)
 }
 
-// SearchUsers searches for users by name or email
 func (h *Handler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	claims, ok := auth.GetUserFromContext(r.Context())
 	if !ok {
@@ -241,15 +246,16 @@ func (h *Handler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type UserResult struct {
-		ID     int     `json:"id"`
-		Name   string  `json:"name"`
-		Email  *string `json:"email,omitempty"`
-		Phone  *string `json:"phone,omitempty"`
-		Status string  `json:"status"`
+		ID       int     `json:"id"`
+		Name     string  `json:"name"`
+		Email    *string `json:"email,omitempty"`
+		Phone    *string `json:"phone,omitempty"`
+		Status   string  `json:"status"`
+		LastSeen *string `json:"last_seen,omitempty"`
 	}
 
 	rows, err := h.db.Query(
-		`SELECT id, name, email, phone, status 
+		`SELECT id, name, email, phone, status, last_seen
 		 FROM users 
 		 WHERE id != ? AND (name LIKE ? OR email LIKE ? OR phone LIKE ?)
 		 LIMIT 20`,
@@ -265,7 +271,7 @@ func (h *Handler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	users := []UserResult{}
 	for rows.Next() {
 		var user UserResult
-		err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Phone, &user.Status)
+		err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Phone, &user.Status, &user.LastSeen)
 		if err != nil {
 			continue
 		}

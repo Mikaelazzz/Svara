@@ -14,6 +14,7 @@ export interface Conversation {
   name: string;
   avatar_url?: string;
   status: 'online' | 'offline';
+  last_seen?: string;
   last_message?: Message;
   unread_count: number;
 }
