@@ -1,15 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { WebSocketClient } from '@/lib/websocket';
+import { useChatStore } from '@/store/chatStore';
+import { useAuthStore } from '@/store/authStore';
 import type { Message } from '@/types/chat';
 
 export function useWebSocket(token: string | null) {
   const [isConnected, setIsConnected] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [typingUsers, setTypingUsers] = useState<Set<number>>(new Set());
   const wsClient = useRef<WebSocketClient | null>(null);
+  
+  const addMessage = useChatStore((state) => state.addMessage);
+  const updateMessage = useChatStore((state) => state.updateMessage);
+  const updateConversationWithMessage = useChatStore((state) => state.updateConversationWithMessage);
+  const currentUserId = useAuthStore((state) => state.user?.id);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setIsConnected(false);
+      return;
+    }
 
     // Initialize WebSocket client
     const client = new WebSocketClient(token);
@@ -19,13 +28,20 @@ export function useWebSocket(token: string | null) {
     client.connect()
       .then(() => setIsConnected(true))
       .catch((error) => {
-        console.error('Failed to connect:', error);
+        console.error('Failed to connect WebSocket:', error);
         setIsConnected(false);
       });
 
     // Handle incoming messages
     client.on('message', (payload: Message) => {
-      setMessages(prev => [...prev, payload]);
+      console.log('Received message:', payload);
+      
+      // Add message to store
+      const otherUserId = payload.sender_id === currentUserId ? payload.receiver_id : payload.sender_id;
+      addMessage(payload);
+      
+      // Update conversation list with user name from message (temporary)
+      updateConversationWithMessage(otherUserId, `User ${otherUserId}`, payload);
       
       // Send delivery receipt
       client.sendReceipt(payload.id, 'delivered');
@@ -33,7 +49,11 @@ export function useWebSocket(token: string | null) {
 
     // Handle message sent confirmation
     client.on('message_sent', (payload: Message) => {
-      setMessages(prev => [...prev, payload]);
+      console.log('Message sent confirmation:', payload);
+      addMessage(payload);
+      
+      // Update conversation list
+      updateConversationWithMessage(payload.receiver_id, `User ${payload.receiver_id}`, payload);
     });
 
     // Handle typing indicators
@@ -51,22 +71,15 @@ export function useWebSocket(token: string | null) {
 
     // Handle message receipts
     client.on('receipt', (payload: { message_id: number; status: string }) => {
-      setMessages(prev => prev.map(msg => {
-        if (msg.id === payload.message_id) {
-          if (payload.status === 'delivered') {
-            return { ...msg, delivered_at: new Date().toISOString() };
-          } else if (payload.status === 'read') {
-            return { ...msg, read_at: new Date().toISOString() };
-          }
-        }
-        return msg;
-      }));
+      updateMessage(payload.message_id, {
+        ...(payload.status === 'delivered' && { delivered_at: new Date().toISOString() }),
+        ...(payload.status === 'read' && { read_at: new Date().toISOString() }),
+      });
     });
 
     // Handle user status
     client.on('user_status', (payload: { user_id: number; status: string }) => {
       console.log('User status:', payload);
-      // Update user status in your state management
     });
 
     // Cleanup
@@ -74,7 +87,7 @@ export function useWebSocket(token: string | null) {
       client.disconnect();
       setIsConnected(false);
     };
-  }, [token]);
+  }, [token, addMessage, updateMessage, updateConversationWithMessage, currentUserId]);
 
   const sendMessage = (receiverId: number, content: string) => {
     wsClient.current?.sendMessage(receiverId, content);
@@ -90,7 +103,6 @@ export function useWebSocket(token: string | null) {
 
   return {
     isConnected,
-    messages,
     typingUsers,
     sendMessage,
     sendTyping,

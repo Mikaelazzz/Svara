@@ -19,25 +19,28 @@ export class WebSocketClient {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private messageHandlers: Map<WSMessageType, Set<(payload: any) => void>> = new Map();
 
-  constructor(private token: string) {}
+  constructor(private token: string) {
+    console.log('WebSocketClient created with token:', token ? 'present' : 'missing');
+  }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        this.ws = new WebSocket(`${WS_URL}/ws/chat`);
+        const wsUrl = `${WS_URL}/ws/chat?token=${encodeURIComponent(this.token)}`;
+        console.log('Connecting to WebSocket:', wsUrl.replace(this.token, '***'));
+        
+        this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
-          console.log('WebSocket connected');
+          console.log('WebSocket connected successfully');
           this.reconnectAttempts = 0;
-          
-          // Send authentication
-          this.send('auth', { token: this.token });
           resolve();
         };
 
         this.ws.onmessage = (event) => {
           try {
             const message: WSMessage = JSON.parse(event.data);
+            console.log('WebSocket message received:', message.type);
             this.handleMessage(message);
           } catch (error) {
             console.error('Failed to parse WebSocket message:', error);
@@ -49,11 +52,12 @@ export class WebSocketClient {
           reject(error);
         };
 
-        this.ws.onclose = () => {
-          console.log('WebSocket disconnected');
+        this.ws.onclose = (event) => {
+          console.log('WebSocket disconnected:', event.code, event.reason);
           this.attemptReconnect();
         };
       } catch (error) {
+        console.error('WebSocket connection error:', error);
         reject(error);
       }
     });
@@ -82,9 +86,10 @@ export class WebSocketClient {
 
   send(type: WSMessageType, payload: any) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('Sending WebSocket message:', type, payload);
       this.ws.send(JSON.stringify({ type, payload }));
     } else {
-      console.warn('WebSocket is not connected');
+      console.warn('WebSocket is not connected, cannot send:', type);
     }
   }
 
@@ -105,7 +110,7 @@ export class WebSocketClient {
       this.reconnectAttempts++;
       const delay = 1000 * this.reconnectAttempts;
       
-      console.log(`Attempting to reconnect in ${delay}ms...`);
+      console.log(`Attempting to reconnect in ${delay}ms... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
       
       this.reconnectTimeout = setTimeout(() => {
         this.connect().catch(() => {

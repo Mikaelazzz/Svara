@@ -10,13 +10,10 @@ export interface Message {
 }
 
 export interface Conversation {
-  user: {
-    id: number;
-    name: string;
-    avatar_url?: string;
-    status: 'online' | 'offline';
-    last_seen?: string;
-  };
+  user_id: number;
+  name: string;
+  avatar_url?: string;
+  status: 'online' | 'offline';
   last_message?: Message;
   unread_count: number;
 }
