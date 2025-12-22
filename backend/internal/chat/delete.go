@@ -28,16 +28,7 @@ func (h *Handler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("User %d deleting conversation with user %d", claims.UserID, otherUserID)
 
-	// Instead of actually deleting, we should add a deleted_by column
-	// But for now, we'll use a workaround: add deleted_for_user_id column
-	// First, check if column exists, if not, add it
-	_, err = h.db.Exec(`
-		ALTER TABLE messages ADD COLUMN deleted_for_user_id INTEGER DEFAULT NULL
-	`)
-	// Ignore error if column already exists
-
 	// Mark messages as deleted for current user only
-	// We mark messages where current user is either sender or receiver
 	result, err := h.db.Exec(
 		`UPDATE messages 
 		 SET deleted_for_user_id = ?

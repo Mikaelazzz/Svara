@@ -32,7 +32,7 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Simplified query without complex aliases
+	// Simplified query - only show conversations with non-deleted messages
 	rows, err := h.db.Query(`
 		SELECT DISTINCT
 			u.id as other_user_id,
@@ -59,10 +59,10 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 		AND u.id != ?
 		ORDER BY last_message_time DESC
 	`, claims.UserID, claims.UserID, claims.UserID,
-	   claims.UserID, claims.UserID, claims.UserID,
-	   claims.UserID, claims.UserID,
-	   claims.UserID, claims.UserID, claims.UserID,
-	   claims.UserID)
+		claims.UserID, claims.UserID, claims.UserID,
+		claims.UserID, claims.UserID,
+		claims.UserID, claims.UserID, claims.UserID,
+		claims.UserID)
 
 	if err != nil {
 		log.Printf("Failed to get conversations: %v", err)
@@ -87,6 +87,12 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 		)
 		if err != nil {
 			log.Printf("Failed to scan conversation: %v", err)
+			continue
+		}
+
+		// Skip conversations where all messages are deleted (last_message_content is NULL)
+		if !lastMessageContent.Valid || lastMessageContent.String == "" {
+			log.Printf("Skipping conversation with user %d - no visible messages", conv.UserID)
 			continue
 		}
 
