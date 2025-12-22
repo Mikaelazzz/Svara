@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, Search, MessageCircle } from 'lucide-react';
+import { LogOut, Search, MessageCircle, Plus } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -10,6 +10,7 @@ import api from '@/lib/api';
 
 import ConversationList from '@/components/chat/ConversationList';
 import ChatWindow from '@/components/chat/ChatWindow';
+import NewChatModal from '@/components/chat/NewChatModal';
 
 export default function ChatPage() {
   const router = useRouter();
@@ -24,6 +25,7 @@ export default function ChatPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
 
   // Initialize WebSocket
   const { isConnected } = useWebSocket(accessToken);
@@ -70,13 +72,22 @@ export default function ChatPage() {
                 )}
               </p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="p-2 hover:bg-gray-100 rounded-lg transition"
-              title="Logout"
-            >
-              <LogOut className="w-5 h-5 text-gray-600" />
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowNewChatModal(true)}
+                className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+                title="New Chat"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+              <button
+                onClick={handleLogout}
+                className="p-2 hover:bg-gray-100 rounded-lg transition"
+                title="Logout"
+              >
+                <LogOut className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
           </div>
 
           {/* Search */}
@@ -108,6 +119,12 @@ export default function ChatPage() {
             <div className="flex flex-col items-center justify-center h-32 text-gray-400">
               <MessageCircle className="w-12 h-12 mb-2" />
               <p className="text-sm">No conversations yet</p>
+              <button
+                onClick={() => setShowNewChatModal(true)}
+                className="mt-2 text-primary-600 hover:text-primary-700 text-sm font-medium"
+              >
+                Start a new chat
+              </button>
             </div>
           )}
         </div>
@@ -139,13 +156,26 @@ export default function ChatPage() {
               <h3 className="text-xl font-medium text-gray-600 mb-2">
                 Select a conversation
               </h3>
-              <p className="text-gray-400">
+              <p className="text-gray-400 mb-4">
                 Choose a conversation from the sidebar to start chatting
               </p>
+              <button
+                onClick={() => setShowNewChatModal(true)}
+                className="px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+              >
+                Start New Chat
+              </button>
             </div>
           </div>
         )}
       </div>
+
+      {/* New Chat Modal */}
+      <NewChatModal
+        isOpen={showNewChatModal}
+        onClose={() => setShowNewChatModal(false)}
+        onSelectUser={(userId) => setActiveConversation(userId)}
+      />
     </div>
   );
 }

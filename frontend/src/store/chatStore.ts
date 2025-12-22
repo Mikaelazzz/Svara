@@ -4,7 +4,7 @@ import type { Message, Conversation } from '@/types/chat';
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: number | null;
-  messages: Map<number, Message[]>; // userId -> messages
+  messages: Map<number, Message[]>;
   
   setConversations: (conversations: Conversation[]) => void;
   setActiveConversation: (userId: number) => void;
@@ -12,6 +12,7 @@ interface ChatState {
   updateMessage: (messageId: number, updates: Partial<Message>) => void;
   setMessages: (userId: number, messages: Message[]) => void;
   markAsRead: (userId: number) => void;
+  updateConversationWithMessage: (userId: number, userName: string, message: Message) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -67,9 +68,42 @@ export const useChatStore = create<ChatState>((set) => ({
   markAsRead: (userId) => {
     set((state) => {
       const conversations = state.conversations.map(conv =>
-        conv.user.id === userId ? { ...conv, unread_count: 0 } : conv
+        conv.user_id === userId ? { ...conv, unread_count: 0 } : conv
       );
       return { conversations };
+    });
+  },
+
+  updateConversationWithMessage: (userId, userName, message) => {
+    set((state) => {
+      const existingConv = state.conversations.find(c => c.user_id === userId);
+      
+      if (existingConv) {
+        // Update existing conversation
+        const conversations = state.conversations.map(conv =>
+          conv.user_id === userId
+            ? { 
+                ...conv, 
+                last_message: message,
+                unread_count: message.sender_id === userId ? conv.unread_count + 1 : conv.unread_count 
+              }
+            : conv
+        );
+        // Move updated conversation to top
+        const updatedConv = conversations.find(c => c.user_id === userId);
+        const otherConvs = conversations.filter(c => c.user_id !== userId);
+        return { conversations: updatedConv ? [updatedConv, ...otherConvs] : conversations };
+      } else {
+        // Add new conversation
+        const newConv: Conversation = {
+          user_id: userId,
+          name: userName,
+          status: 'online',
+          last_message: message,
+          unread_count: message.sender_id === userId ? 1 : 0,
+        };
+        return { conversations: [newConv, ...state.conversations] };
+      }
     });
   },
 }));

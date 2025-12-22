@@ -12,9 +12,10 @@ import TypingIndicator from './TypingIndicator';
 
 interface ChatWindowProps {
   userId: number;
+  onClose: () => void;
 }
 
-export default function ChatWindow({ userId }: ChatWindowProps) {
+export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
   const currentUser = useAuthStore((state) => state.user);
   const messages = useChatStore((state) => state.messages.get(userId) || []);
   const setMessages = useChatStore((state) => state.setMessages);
@@ -28,15 +29,19 @@ export default function ChatWindow({ userId }: ChatWindowProps) {
   const [otherUser, setOtherUser] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const loadedRef = useRef(false);
 
-  // Load messages
+  // Load messages only once
   useEffect(() => {
+    if (loadedRef.current) return;
+    
     const loadMessages = async () => {
       try {
         setLoading(true);
         const response = await api.get(`/chat/messages?user_id=${userId}`);
         const msgs = response.data.data || [];
-        setMessages(userId, msgs.reverse());
+        // Backend returns ASC order (oldest first), no need to reverse
+        setMessages(userId, msgs);
         
         // Mark messages as read
         msgs.forEach((msg: any) => {
@@ -44,6 +49,8 @@ export default function ChatWindow({ userId }: ChatWindowProps) {
             markAsRead(msg.id);
           }
         });
+        
+        loadedRef.current = true;
       } catch (error) {
         console.error('Failed to load messages:', error);
       } finally {
@@ -52,21 +59,46 @@ export default function ChatWindow({ userId }: ChatWindowProps) {
     };
 
     loadMessages();
-  }, [userId, setMessages, markAsRead]);
+  }, [userId]);
 
   // Load other user info
   useEffect(() => {
-    const conversations = useChatStore.getState().conversations;
-    const conv = conversations.find((c) => c.user.id === userId);
-    if (conv) {
-      setOtherUser(conv.user);
-    }
+    const loadUserInfo = async () => {
+      try {
+        setOtherUser({
+          id: userId,
+          name: `User ${userId}`,
+          status: 'online',
+        });
+      } catch (error) {
+        console.error('Failed to load user info:', error);
+      }
+    };
+
+    loadUserInfo();
   }, [userId]);
 
-  // Scroll to bottom
+  // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Reset loaded ref when userId changes
+  useEffect(() => {
+    loadedRef.current = false;
+  }, [userId]);
+
+  // ESC key handler to close chat
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
