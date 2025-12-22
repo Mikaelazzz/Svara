@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/yourusername/svara/internal/auth"
+	"github.com/yourusername/svara/internal/chat"
 	"github.com/yourusername/svara/internal/config"
 	"github.com/yourusername/svara/internal/database"
 )
@@ -38,6 +39,7 @@ func main() {
 
 	// Initialize handlers
 	authHandler := auth.NewHandler(authService)
+	chatHandler := chat.NewHandler(db.DB)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -74,7 +76,19 @@ func main() {
 
 			// User routes will be added here
 			// WebSocket routes will be added here
+
+			// Chat routes
+			r.Route("/chat", func(r chi.Router) {
+				r.Get("/messages", chatHandler.GetMessages)
+				r.Get("/conversations", chatHandler.GetConversations)
+			})
 		})
+	})
+
+	// WebSocket routes (protected)
+	r.Route("/ws", func(r chi.Router) {
+		r.Use(auth.AuthMiddleware(cfg))
+		r.Get("/chat", chatHandler.HandleWebSocket)
 	})
 
 	// Start server
