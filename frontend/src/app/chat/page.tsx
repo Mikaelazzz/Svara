@@ -11,6 +11,7 @@ import api from '@/lib/api';
 import ConversationList from '@/components/chat/ConversationList';
 import ChatWindow from '@/components/chat/ChatWindow';
 import NewChatModal from '@/components/chat/NewChatModal';
+import CallManager from '@/components/call/CallManager';
 
 export default function ChatPage() {
   const router = useRouter();
@@ -28,8 +29,8 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
 
-  // Initialize WebSocket
-  const { isConnected } = useWebSocket(accessToken);
+  // Initialize WebSocket and get client reference
+  const { isConnected, wsClient } = useWebSocket(accessToken);
 
   // Load conversations
   useEffect(() => {
@@ -183,6 +184,9 @@ export default function ChatPage() {
         onClose={() => setShowNewChatModal(false)}
         onSelectUser={(userId) => setActiveConversation(userId)}
       />
+
+      {/* Call Manager */}
+      <CallManager wsClient={wsClient} />
     </div>
   );
 }

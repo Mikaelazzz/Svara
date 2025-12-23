@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Send, Loader2, Phone, Video } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
+import { useCallStore } from '@/store/callStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import api from '@/lib/api';
 
@@ -24,6 +25,7 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
   const { sendMessage, sendTyping, markAsRead, typingUsers } = useWebSocket(
     useAuthStore((state) => state.accessToken)
   );
+  const { initiateCall } = useCallStore();
 
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(true);
@@ -174,6 +176,16 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
     return time ? `Offline - ${time}` : 'Offline';
   };
 
+  const handleStartCall = (type: 'audio' | 'video') => {
+    if (!otherUser) return;
+    
+    // Initiate call in store
+    initiateCall(userId, type);
+    
+    // Note: The actual WebSocket call request will be sent by CallManager
+    // when it detects the call state change
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -205,10 +217,18 @@ export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
 
         {/* Call Buttons */}
         <div className="flex gap-2">
-          <button className="p-2 hover:bg-gray-100 rounded-lg transition" title="Voice Call">
+          <button 
+            onClick={() => handleStartCall('audio')}
+            className="p-2 hover:bg-gray-100 rounded-lg transition" 
+            title="Voice Call"
+          >
             <Phone className="w-5 h-5 text-gray-600" />
           </button>
-          <button className="p-2 hover:bg-gray-100 rounded-lg transition" title="Video Call">
+          <button 
+            onClick={() => handleStartCall('video')}
+            className="p-2 hover:bg-gray-100 rounded-lg transition" 
+            title="Video Call"
+          >
             <Video className="w-5 h-5 text-gray-600" />
           </button>
         </div>
