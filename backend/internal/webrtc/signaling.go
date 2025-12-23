@@ -27,12 +27,16 @@ func NewSignalingHandler(hub *chat.Hub, db *database.Database) *SignalingHandler
 
 // HandleSignalingMessage processes incoming signaling messages
 func (sh *SignalingHandler) HandleSignalingMessage(client *chat.Client, message []byte) {
+	log.Printf("🎯 SignalingHandler received message from user %d: %s", client.UserID, string(message))
+
 	var sigMsg SignalingMessage
 	if err := json.Unmarshal(message, &sigMsg); err != nil {
-		log.Printf("Error unmarshaling signaling message: %v", err)
+		log.Printf("❌ Error unmarshaling signaling message: %v", err)
 		sh.sendError(client, "Invalid signaling message format")
 		return
 	}
+
+	log.Printf("✅ Parsed signaling message: type=%s, to=%d, from=%d", sigMsg.Type, sigMsg.To, sigMsg.From)
 
 	sigMsg.From = int64(client.UserID)
 	sigMsg.Timestamp = time.Now()
@@ -55,23 +59,29 @@ func (sh *SignalingHandler) HandleSignalingMessage(client *chat.Client, message 
 	case MessageTypeICECandidate:
 		sh.handleICECandidate(client, &sigMsg)
 	default:
-		log.Printf("Unknown signaling message type: %s", sigMsg.Type)
+		log.Printf("❌ Unknown signaling message type: %s", sigMsg.Type)
 		sh.sendError(client, "Unknown message type")
 	}
 }
 
 // handleCallRequest processes a call initiation request
 func (sh *SignalingHandler) handleCallRequest(client *chat.Client, msg *SignalingMessage) {
+	log.Printf("📞 Processing call request from user %d to user %d (type: %s)", client.UserID, msg.To, msg.CallType)
+
 	// Check if callee exists and is online
 	calleeClient := sh.hub.GetClient(msg.To)
 	if calleeClient == nil {
+		log.Printf("❌ User %d is offline or not found", msg.To)
 		sh.sendError(client, "User is offline")
 		return
 	}
 
+	log.Printf("✅ Found callee client for user %d", msg.To)
+
 	// Create call session
 	pc, err := sh.peerManager.CreateCall(int64(client.UserID), msg.To, msg.CallType)
 	if err != nil {
+		log.Printf("❌ Failed to create call: %v", err)
 		if err == ErrUserBusy {
 			sh.sendError(client, "User is busy")
 		} else {
@@ -80,25 +90,20 @@ func (sh *SignalingHandler) handleCallRequest(client *chat.Client, msg *Signalin
 		return
 	}
 
+	log.Printf("✅ Created call session: %s", pc.CallID)
+
 	// Store call in database
 	if err := sh.storeCall(pc); err != nil {
-		log.Printf("Error storing call: %v", err)
+		log.Printf("⚠️ Error storing call: %v", err)
 	}
 
-	// Send call request to callee
+	// Send call request to callee ONLY
 	msg.CallID = pc.CallID
+	log.Printf("📤 Forwarding call request to callee (user %d) with call_id %s", msg.To, pc.CallID)
 	sh.forwardMessage(calleeClient, msg)
 
-	// Send confirmation to caller
-	response := SignalingMessage{
-		Type:      MessageTypeCallRequest,
-		From:      int64(client.UserID),
-		To:        msg.To,
-		CallID:    pc.CallID,
-		CallType:  msg.CallType,
-		Timestamp: time.Now(),
-	}
-	sh.sendMessage(client, &response)
+	// DO NOT send back to caller - caller already knows they initiated the call!
+	log.Printf("✅ Call request sent to callee, caller does not need confirmation")
 }
 
 // handleCallAccept processes call acceptance
@@ -260,7 +265,13 @@ func (sh *SignalingHandler) handleICECandidate(client *chat.Client, msg *Signali
 // Helper functions
 
 func (sh *SignalingHandler) forwardMessage(client *chat.Client, msg *SignalingMessage) {
-	data, err := json.Marshal(msg)
+	// Wrap the signaling message in the expected format: {type: "...", payload: {...}}
+	wrapper := map[string]interface{}{
+		"type":    msg.Type,
+		"payload": msg,
+	}
+
+	data, err := json.Marshal(wrapper)
 	if err != nil {
 		log.Printf("Error marshaling message: %v", err)
 		return
@@ -268,13 +279,20 @@ func (sh *SignalingHandler) forwardMessage(client *chat.Client, msg *SignalingMe
 
 	select {
 	case client.Send <- data:
+		log.Printf("Forwarded %s message to user %d", msg.Type, client.UserID)
 	default:
 		log.Printf("Client %d send channel is full", client.UserID)
 	}
 }
 
 func (sh *SignalingHandler) sendMessage(client *chat.Client, msg *SignalingMessage) {
-	data, err := json.Marshal(msg)
+	// Wrap the signaling message in the expected format: {type: "...", payload: {...}}
+	wrapper := map[string]interface{}{
+		"type":    msg.Type,
+		"payload": msg,
+	}
+
+	data, err := json.Marshal(wrapper)
 	if err != nil {
 		log.Printf("Error marshaling message: %v", err)
 		return
@@ -282,6 +300,7 @@ func (sh *SignalingHandler) sendMessage(client *chat.Client, msg *SignalingMessa
 
 	select {
 	case client.Send <- data:
+		log.Printf("Sent %s message to user %d", msg.Type, client.UserID)
 	default:
 		log.Printf("Client %d send channel is full", client.UserID)
 	}

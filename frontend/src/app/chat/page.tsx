@@ -32,6 +32,15 @@ export default function ChatPage() {
   // Initialize WebSocket and get client reference
   const { isConnected, wsClient } = useWebSocket(accessToken);
 
+  // Debug: Log wsClient state
+  useEffect(() => {
+    console.log('📡 Chat Page - WebSocket state:', {
+      isConnected,
+      wsClient: wsClient ? 'exists' : 'null',
+      wsClientConnected: wsClient?.isConnected()
+    });
+  }, [isConnected, wsClient]);
+
   // Load conversations
   useEffect(() => {
     const loadConversations = async () => {

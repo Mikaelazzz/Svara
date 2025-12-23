@@ -29,31 +29,7 @@ export class WebSocketClient extends EventEmitter {
         };
 
         this.ws.onmessage = (event) => {
-          try {
-            console.log('📩 WebSocket raw message:', event.data);
-            
-            // Split by newline in case multiple messages are sent together
-            const messages = event.data.trim().split('\n').filter((line: string) => line.trim());
-            
-            messages.forEach((msgStr: string) => {
-              try {
-                const data = JSON.parse(msgStr);
-                console.log('📦 WebSocket parsed message:', data);
-                
-                // Emit event based on message type
-                if (data.type) {
-                  console.log(`🔔 Emitting event: ${data.type}`, data.payload);
-                  this.emit(data.type, data.payload);
-                } else {
-                  console.warn('Message without type:', data);
-                }
-              } catch (parseError) {
-                console.error('Failed to parse individual message:', msgStr, parseError);
-              }
-            });
-          } catch (error) {
-            console.error('Failed to process WebSocket message:', error, 'Raw data:', event.data);
-          }
+          this.handleMessage(event);
         };
 
         this.ws.onerror = (error) => {
@@ -82,6 +58,56 @@ export class WebSocketClient extends EventEmitter {
       }, this.reconnectDelay * this.reconnectAttempts);
     } else {
       console.error('❌ Max reconnection attempts reached');
+    }
+  }
+
+  private handleMessage(event: MessageEvent) {
+    try {
+      console.log('📩 WebSocket raw message:', event.data);
+      
+      const message = JSON.parse(event.data);
+      console.log('📦 WebSocket parsed message:', message);
+
+      const { type, payload } = message;
+
+      if (!type) {
+        console.error('❌ Message missing type field:', message);
+        return;
+      }
+
+      console.log(`🔔 Emitting event: ${type}`, payload);
+
+      // Emit the event to all listeners
+      this.emit(type, payload);
+      
+      console.log(`✅ Event ${type} emitted successfully`);
+
+      // Handle specific message types
+      switch (type) {
+        case 'message':
+          // Chat message received
+          break;
+        case 'typing':
+          // Typing indicator
+          break;
+        case 'user_status':
+          // User online/offline status
+          break;
+        case 'call-request':
+        case 'call-accept':
+        case 'call-reject':
+        case 'call-end':
+        case 'offer':
+        case 'answer':
+        case 'ice-candidate':
+          console.log(`📞 WebRTC signaling event: ${type}`);
+          // These are handled by event listeners in CallManager
+          break;
+        default:
+          console.log(`ℹ️ Unhandled message type: ${type}`);
+      }
+    } catch (error) {
+      console.error('❌ Error handling WebSocket message:', error, event.data);
     }
   }
 

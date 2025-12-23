@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useCallStore } from '@/store/callStore';
+import { useAuthStore } from '@/store/authStore';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { WebSocketClient } from '@/lib/websocket';
 
@@ -36,19 +37,36 @@ export default function CallManager({ wsClient }: CallManagerProps) {
   const hasInitializedRef = useRef(false);
   const isCallerRef = useRef(false);
 
+  // Debug: Log when component mounts/unmounts
+  useEffect(() => {
+    console.log('🔧 CallManager mounted, wsClient:', wsClient ? 'connected' : 'null');
+    return () => {
+      console.log('🔧 CallManager unmounting');
+    };
+  }, [wsClient]);
+
   // Send call request when outgoing call is initiated (but DON'T initialize peer yet)
   useEffect(() => {
     if (currentCall?.status === 'outgoing' && wsClient && !hasInitializedRef.current) {
-      console.log('📞 Sending call request...');
+      console.log('📞 Sending call request...', {
+        calleeId: currentCall.calleeId,
+        type: currentCall.type,
+        wsConnected: wsClient.isConnected()
+      });
       wsClient.sendCallRequest(currentCall.calleeId, currentCall.type);
       isCallerRef.current = true;
       hasInitializedRef.current = true; // Mark as sent
     }
   }, [currentCall, wsClient]);
 
-  // Listen to WebSocket call events
+  // Listen to WebSocket call events - MUST register IMMEDIATELY when wsClient is available
   useEffect(() => {
-    if (!wsClient) return;
+    if (!wsClient) {
+      console.warn('⚠️ CallManager: wsClient is null, cannot register event listeners');
+      return;
+    }
+
+    console.log('🎧 CallManager: Registering WebSocket event listeners...');
 
     // Incoming call request
     const handleCallRequest = (payload: any) => {
@@ -145,6 +163,16 @@ export default function CallManager({ wsClient }: CallManagerProps) {
     };
 
     // Register event listeners
+    console.log('✅ Registering event listeners:', [
+      'call-request',
+      'call-accept',
+      'call-reject',
+      'call-end',
+      'offer',
+      'answer',
+      'ice-candidate'
+    ]);
+    
     wsClient.on('call-request', handleCallRequest);
     wsClient.on('call-accept', handleCallAccept);
     wsClient.on('call-reject', handleCallReject);
@@ -153,8 +181,11 @@ export default function CallManager({ wsClient }: CallManagerProps) {
     wsClient.on('answer', handleAnswerReceived);
     wsClient.on('ice-candidate', handleIceCandidateReceived);
 
+    console.log('✅ Event listeners registered successfully');
+
     // Cleanup
     return () => {
+      console.log('🧹 Cleaning up CallManager event listeners');
       wsClient.off('call-request', handleCallRequest);
       wsClient.off('call-accept', handleCallAccept);
       wsClient.off('call-reject', handleCallReject);
@@ -163,7 +194,7 @@ export default function CallManager({ wsClient }: CallManagerProps) {
       wsClient.off('answer', handleAnswerReceived);
       wsClient.off('ice-candidate', handleIceCandidateReceived);
     };
-  }, [wsClient, currentCall, setCurrentCall, setCallStatus, clearCurrentCall, initializePeer, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup]);
+  }, [wsClient, setCurrentCall, setCallStatus, clearCurrentCall]); // REMOVED currentCall from dependencies!
 
   // Handle call acceptance - CALLEE accepts
   const handleAcceptCall = async () => {
@@ -231,11 +262,29 @@ export default function CallManager({ wsClient }: CallManagerProps) {
   // Render appropriate UI based on call status
   if (!currentCall) return null;
 
+  console.log('🎨 CallManager rendering:', {
+    status: currentCall.status,
+    callerId: currentCall.callerId,
+    calleeId: currentCall.calleeId,
+    isCaller: isCallerRef.current,
+    currentUserId: useAuthStore.getState().user?.id
+  });
+
   // Get user name - show the OTHER person's name
   const getUserName = () => {
-    // If we're the caller, show callee's name, otherwise show caller's name
-    const otherUserId = isCallerRef.current ? currentCall.calleeId : currentCall.callerId;
-    return `User ${otherUserId}`;
+    if (!currentCall) return 'Unknown';
+    
+    // Determine which user we are
+    const currentUserId = useAuthStore.getState().user?.id;
+    
+    // Show the OTHER user's name
+    if (currentUserId === currentCall.callerId) {
+      // We are the caller, show callee's name
+      return `User ${currentCall.calleeId}`;
+    } else {
+      // We are the callee, show caller's name
+      return `User ${currentCall.callerId}`;
+    }
   };
 
   switch (currentCall.status) {

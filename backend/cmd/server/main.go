@@ -12,6 +12,7 @@ import (
 	"github.com/yourusername/svara/internal/chat"
 	"github.com/yourusername/svara/internal/config"
 	"github.com/yourusername/svara/internal/database"
+	"github.com/yourusername/svara/internal/webrtc"
 )
 
 func main() {
@@ -40,6 +41,11 @@ func main() {
 	// Initialize chat hub
 	hub := chat.NewHub(db.DB)
 	go hub.Run()
+
+	// Initialize WebRTC signaling handler
+	signalingHandler := webrtc.NewSignalingHandler(hub, db)
+	hub.SetSignalingHandler(signalingHandler)
+	log.Println("✅ WebRTC signaling handler initialized")
 
 	// Initialize handlers
 	authHandler := auth.NewHandler(authService)

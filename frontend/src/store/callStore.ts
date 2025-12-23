@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useAuthStore } from './authStore';
 
 export type CallType = 'audio' | 'video';
 export type CallStatus = 'idle' | 'ringing' | 'outgoing' | 'active' | 'ended';
@@ -32,14 +33,19 @@ export const useCallStore = create<CallState>((set) => ({
   callHistory: [],
 
   initiateCall: (calleeId, type) => {
+    // Get current user ID from auth store
+    const currentUserId = useAuthStore.getState().user?.id || 0;
+    
     const call: Call = {
       callId: '', // Will be set by server
-      callerId: 0, // Will be set from auth
+      callerId: currentUserId,
       calleeId,
       type,
       status: 'outgoing',
       startedAt: new Date(),
     };
+    
+    console.log('📞 Initiating call:', call);
     set({ currentCall: call });
   },
 

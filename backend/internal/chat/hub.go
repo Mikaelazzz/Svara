@@ -106,20 +106,43 @@ func (h *Hub) processMessage(clientMsg *ClientMessage) {
 	case "call-request", "call-accept", "call-reject", "call-end", "call-cancel",
 		"offer", "answer", "ice-candidate":
 		// Handle WebRTC signaling messages
+		log.Printf("🔔 Received signaling message: %s from user %d", clientMsg.message.Type, clientMsg.client.UserID)
+
 		if h.signalingHandler != nil {
+			// Flatten the payload structure for signaling handler
+			// Frontend sends: {type: "...", payload: {...}}
+			// Signaling handler expects: {type: "...", field1: value1, ...}
+			flattenedMsg := map[string]interface{}{
+				"type": clientMsg.message.Type,
+			}
+
+			// Copy payload fields to top level
+			if payload, ok := clientMsg.message.Payload.(map[string]interface{}); ok {
+				for key, value := range payload {
+					flattenedMsg[key] = value
+				}
+			}
+
 			// Convert to JSON for signaling handler
-			data, err := json.Marshal(clientMsg.message)
+			data, err := json.Marshal(flattenedMsg)
 			if err != nil {
-				log.Printf("Failed to marshal signaling message: %v", err)
+				log.Printf("❌ Failed to marshal signaling message: %v", err)
 				return
 			}
+
+			log.Printf("📤 Forwarding to signaling handler: %s", string(data))
+
 			// Call signaling handler via reflection to avoid circular import
 			// The actual handler will be set from main.go
 			if handler, ok := h.signalingHandler.(interface {
 				HandleSignalingMessage(*Client, []byte)
 			}); ok {
 				handler.HandleSignalingMessage(clientMsg.client, data)
+			} else {
+				log.Printf("❌ Signaling handler does not implement HandleSignalingMessage")
 			}
+		} else {
+			log.Printf("❌ Signaling handler is nil!")
 		}
 	default:
 		log.Printf("Unknown message type: %s", clientMsg.message.Type)
@@ -237,5 +260,21 @@ func (h *Hub) SetSignalingHandler(handler interface{}) {
 
 // GetClient returns a client by user ID
 func (h *Hub) GetClient(userID int64) *Client {
-	return h.clients[int(userID)]
+	log.Printf("🔍 Looking for client with userID: %d", userID)
+	log.Printf("📋 Current clients: %v", func() []int {
+		ids := make([]int, 0, len(h.clients))
+		for id := range h.clients {
+			ids = append(ids, id)
+		}
+		return ids
+	}())
+
+	client, ok := h.clients[int(userID)]
+	if !ok {
+		log.Printf("❌ Client %d NOT FOUND in hub!", userID)
+		return nil
+	}
+
+	log.Printf("✅ Found client %d", userID)
+	return client
 }
