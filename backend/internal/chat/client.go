@@ -19,8 +19,8 @@ const (
 type Client struct {
 	hub    *Hub
 	conn   *websocket.Conn
-	send   chan []byte
-	userID int
+	Send   chan []byte // Exported for WebRTC signaling
+	UserID int         // Exported for WebRTC signaling
 	mu     sync.Mutex
 }
 
@@ -28,18 +28,18 @@ func NewClient(hub *Hub, conn *websocket.Conn, userID int) *Client {
 	return &Client{
 		hub:    hub,
 		conn:   conn,
-		send:   make(chan []byte, 256),
-		userID: userID,
+		Send:   make(chan []byte, 256),
+		UserID: userID,
 	}
 }
 
 func (c *Client) cleanup() {
 	// Update user status to offline when disconnecting
-	_, err := c.hub.db.Exec("UPDATE users SET status = 'offline', last_seen = datetime('now') WHERE id = ?", c.userID)
+	_, err := c.hub.db.Exec("UPDATE users SET status = 'offline', last_seen = datetime('now') WHERE id = ?", c.UserID)
 	if err != nil {
 		log.Printf("Failed to update user status on disconnect: %v", err)
 	}
-	log.Printf("User %d disconnected and set to offline", c.userID)
+	log.Printf("User %d disconnected and set to offline", c.UserID)
 }
 
 func (c *Client) readPump() {
@@ -87,7 +87,7 @@ func (c *Client) writePump() {
 
 	for {
 		select {
-		case message, ok := <-c.send:
+		case message, ok := <-c.Send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
@@ -100,10 +100,10 @@ func (c *Client) writePump() {
 			}
 			w.Write(message)
 
-			n := len(c.send)
+			n := len(c.Send)
 			for i := 0; i < n; i++ {
 				w.Write([]byte{'\n'})
-				w.Write(<-c.send)
+				w.Write(<-c.Send)
 			}
 
 			if err := w.Close(); err != nil {
@@ -134,7 +134,7 @@ func (c *Client) SendMessage(msgType string, payload interface{}) error {
 	}
 
 	select {
-	case c.send <- data:
+	case c.Send <- data:
 		return nil
 	default:
 		return nil

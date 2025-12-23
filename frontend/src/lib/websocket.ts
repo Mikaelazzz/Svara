@@ -136,6 +136,130 @@ export class WebSocketClient extends EventEmitter {
     this.ws.send(JSON.stringify(message));
   }
 
+  // WebRTC Signaling Methods
+  sendCallRequest(calleeId: number, callType: 'audio' | 'video') {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('❌ WebSocket is not connected');
+      return;
+    }
+
+    const message = {
+      type: 'call-request',
+      payload: {
+        to: calleeId,
+        call_type: callType,
+      },
+    };
+
+    console.log('📞 Sending call request:', message);
+    this.ws.send(JSON.stringify(message));
+  }
+
+  sendCallAccept(callId: string, callerId: number) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      type: 'call-accept',
+      payload: {
+        call_id: callId,
+        to: callerId,
+      },
+    };
+
+    console.log('✅ Sending call accept:', message);
+    this.ws.send(JSON.stringify(message));
+  }
+
+  sendCallReject(callId: string, callerId: number) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      type: 'call-reject',
+      payload: {
+        call_id: callId,
+        to: callerId,
+      },
+    };
+
+    console.log('❌ Sending call reject:', message);
+    this.ws.send(JSON.stringify(message));
+  }
+
+  sendCallEnd(callId: string, otherUserId: number) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      type: 'call-end',
+      payload: {
+        call_id: callId,
+        to: otherUserId,
+      },
+    };
+
+    console.log('📴 Sending call end:', message);
+    this.ws.send(JSON.stringify(message));
+  }
+
+  sendOffer(callId: string, to: number, sdp: string) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      type: 'offer',
+      payload: {
+        call_id: callId,
+        to: to,
+        sdp: sdp,
+      },
+    };
+
+    console.log('📤 Sending SDP offer:', message);
+    this.ws.send(JSON.stringify(message));
+  }
+
+  sendAnswer(callId: string, to: number, sdp: string) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      type: 'answer',
+      payload: {
+        call_id: callId,
+        to: to,
+        sdp: sdp,
+      },
+    };
+
+    console.log('📤 Sending SDP answer:', message);
+    this.ws.send(JSON.stringify(message));
+  }
+
+  sendIceCandidate(callId: string, to: number, candidate: RTCIceCandidateInit) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      type: 'ice-candidate',
+      payload: {
+        call_id: callId,
+        to: to,
+        candidate: candidate,
+      },
+    };
+
+    console.log('📤 Sending ICE candidate:', message);
+    this.ws.send(JSON.stringify(message));
+  }
+
   disconnect() {
     if (this.ws) {
       this.ws.close();

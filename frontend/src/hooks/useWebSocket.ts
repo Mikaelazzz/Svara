@@ -125,5 +125,6 @@ export function useWebSocket(token: string | null) {
     sendMessage,
     sendTyping,
     markAsRead,
+    wsClient: wsClient.current,
   };
 }

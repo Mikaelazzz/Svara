@@ -9,12 +9,13 @@ import (
 
 // Hub maintains the set of active clients and broadcasts messages
 type Hub struct {
-	clients       map[int]*Client
-	broadcast     chan []byte
-	register      chan *Client
-	unregister    chan *Client
-	handleMessage chan *ClientMessage
-	db            *sql.DB
+	clients          map[int]*Client
+	broadcast        chan []byte
+	register         chan *Client
+	unregister       chan *Client
+	handleMessage    chan *ClientMessage
+	db               *sql.DB
+	signalingHandler interface{} // Will be set to *webrtc.SignalingHandler
 }
 
 type ClientMessage struct {
@@ -37,20 +38,20 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
-			h.clients[client.userID] = client
-			log.Printf("Client registered: %d, total clients: %d", client.userID, len(h.clients))
+			h.clients[client.UserID] = client
+			log.Printf("Client registered: %d, total clients: %d", client.UserID, len(h.clients))
 
 			// Broadcast user online status to all clients
-			h.broadcastUserStatus(client.userID, "online")
+			h.broadcastUserStatus(client.UserID, "online")
 
 		case client := <-h.unregister:
-			if _, ok := h.clients[client.userID]; ok {
-				delete(h.clients, client.userID)
-				close(client.send)
-				log.Printf("Client unregistered: %d, total clients: %d", client.userID, len(h.clients))
+			if _, ok := h.clients[client.UserID]; ok {
+				delete(h.clients, client.UserID)
+				close(client.Send)
+				log.Printf("Client unregistered: %d, total clients: %d", client.UserID, len(h.clients))
 
 				// Broadcast user offline status to all clients
-				h.broadcastUserStatus(client.userID, "offline")
+				h.broadcastUserStatus(client.UserID, "offline")
 			}
 
 		case clientMsg := <-h.handleMessage:
@@ -59,10 +60,10 @@ func (h *Hub) Run() {
 		case message := <-h.broadcast:
 			for _, client := range h.clients {
 				select {
-				case client.send <- message:
+				case client.Send <- message:
 				default:
-					close(client.send)
-					delete(h.clients, client.userID)
+					close(client.Send)
+					delete(h.clients, client.UserID)
 				}
 			}
 		}
@@ -87,9 +88,9 @@ func (h *Hub) broadcastUserStatus(userID int, status string) {
 	// Broadcast to all connected clients
 	for _, client := range h.clients {
 		select {
-		case client.send <- data:
+		case client.Send <- data:
 		default:
-			log.Printf("Failed to send status update to client %d", client.userID)
+			log.Printf("Failed to send status update to client %d", client.UserID)
 		}
 	}
 }
@@ -102,6 +103,24 @@ func (h *Hub) processMessage(clientMsg *ClientMessage) {
 		h.handleTypingIndicator(clientMsg)
 	case "receipt":
 		h.handleReceipt(clientMsg)
+	case "call-request", "call-accept", "call-reject", "call-end", "call-cancel",
+		"offer", "answer", "ice-candidate":
+		// Handle WebRTC signaling messages
+		if h.signalingHandler != nil {
+			// Convert to JSON for signaling handler
+			data, err := json.Marshal(clientMsg.message)
+			if err != nil {
+				log.Printf("Failed to marshal signaling message: %v", err)
+				return
+			}
+			// Call signaling handler via reflection to avoid circular import
+			// The actual handler will be set from main.go
+			if handler, ok := h.signalingHandler.(interface {
+				HandleSignalingMessage(*Client, []byte)
+			}); ok {
+				handler.HandleSignalingMessage(clientMsg.client, data)
+			}
+		}
 	default:
 		log.Printf("Unknown message type: %s", clientMsg.message.Type)
 	}
@@ -121,7 +140,7 @@ func (h *Hub) handleChatMessage(clientMsg *ClientMessage) {
 	result, err := h.db.Exec(
 		`INSERT INTO messages (sender_id, receiver_id, content, encrypted, sent_at) 
 		 VALUES (?, ?, ?, ?, ?)`,
-		clientMsg.client.userID, receiverID, content, false, time.Now(),
+		clientMsg.client.UserID, receiverID, content, false, time.Now(),
 	)
 	if err != nil {
 		log.Printf("Failed to save message: %v", err)
@@ -133,7 +152,7 @@ func (h *Hub) handleChatMessage(clientMsg *ClientMessage) {
 	// Create message response
 	msg := Message{
 		ID:         int(messageID),
-		SenderID:   clientMsg.client.userID,
+		SenderID:   clientMsg.client.UserID,
 		ReceiverID: receiverID,
 		Content:    content,
 		Encrypted:  false,
@@ -160,7 +179,7 @@ func (h *Hub) handleTypingIndicator(clientMsg *ClientMessage) {
 
 	if receiverClient, ok := h.clients[receiverID]; ok {
 		receiverClient.SendMessage("typing", map[string]interface{}{
-			"user_id":   clientMsg.client.userID,
+			"user_id":   clientMsg.client.UserID,
 			"is_typing": isTyping,
 		})
 	}
@@ -209,4 +228,14 @@ func (h *Hub) handleReceipt(clientMsg *ClientMessage) {
 			"status":     status,
 		})
 	}
+}
+
+// SetSignalingHandler sets the WebRTC signaling handler
+func (h *Hub) SetSignalingHandler(handler interface{}) {
+	h.signalingHandler = handler
+}
+
+// GetClient returns a client by user ID
+func (h *Hub) GetClient(userID int64) *Client {
+	return h.clients[int(userID)]
 }
