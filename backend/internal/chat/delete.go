@@ -10,8 +10,8 @@ import (
 	"github.com/yourusername/svara/pkg/response"
 )
 
-// DeleteConversation marks messages as deleted for the current user only
-// The other user will still see their messages
+// DeleteConversation marks a conversation as deleted for the current user
+// Messages sent before deleted_at will be hidden, new messages will still appear
 func (h *Handler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 	claims, ok := auth.GetUserFromContext(r.Context())
 	if !ok {
@@ -28,13 +28,13 @@ func (h *Handler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("User %d deleting conversation with user %d", claims.UserID, otherUserID)
 
-	// Mark messages as deleted for current user only
+	// Insert or replace record in deleted_conversations table
+	// This stores the timestamp of when the user deleted the conversation
+	// Messages sent BEFORE this timestamp will be hidden from the user
 	result, err := h.db.Exec(
-		`UPDATE messages 
-		 SET deleted_for_user_id = ?
-		 WHERE deleted_for_user_id IS NULL 
-		 AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))`,
-		claims.UserID, claims.UserID, otherUserID, otherUserID, claims.UserID,
+		`INSERT OR REPLACE INTO deleted_conversations (user_id, other_user_id, deleted_at)
+		 VALUES (?, ?, CURRENT_TIMESTAMP)`,
+		claims.UserID, otherUserID,
 	)
 	if err != nil {
 		log.Printf("Failed to mark conversation as deleted: %v", err)
@@ -43,7 +43,7 @@ func (h *Handler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rowsAffected, _ := result.RowsAffected()
-	log.Printf("Marked %d messages as deleted for user %d", rowsAffected, claims.UserID)
+	log.Printf("Marked conversation as deleted for user %d (rows affected: %d)", claims.UserID, rowsAffected)
 
 	response.Success(w, "Conversation deleted successfully", nil)
 }

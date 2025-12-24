@@ -32,7 +32,8 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Simplified query - only show conversations with non-deleted messages
+	// Query uses deleted_conversations table to filter out deleted messages by timestamp
+	// Messages sent AFTER deleted_at are still visible (allowing new conversations)
 	rows, err := h.db.Query(`
 		SELECT DISTINCT
 			u.id as other_user_id,
@@ -40,21 +41,25 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 			u.status,
 			u.last_seen,
 			(SELECT content FROM messages m2 
+			 LEFT JOIN deleted_conversations dc2 ON dc2.user_id = ? AND dc2.other_user_id = u.id
 			 WHERE ((m2.sender_id = ? AND m2.receiver_id = u.id) OR (m2.sender_id = u.id AND m2.receiver_id = ?))
-			 AND (m2.deleted_for_user_id IS NULL OR m2.deleted_for_user_id != ?)
+			 AND (dc2.deleted_at IS NULL OR m2.sent_at > dc2.deleted_at)
 			 ORDER BY m2.sent_at DESC LIMIT 1) as last_message_content,
 			(SELECT sent_at FROM messages m2 
+			 LEFT JOIN deleted_conversations dc2 ON dc2.user_id = ? AND dc2.other_user_id = u.id
 			 WHERE ((m2.sender_id = ? AND m2.receiver_id = u.id) OR (m2.sender_id = u.id AND m2.receiver_id = ?))
-			 AND (m2.deleted_for_user_id IS NULL OR m2.deleted_for_user_id != ?)
+			 AND (dc2.deleted_at IS NULL OR m2.sent_at > dc2.deleted_at)
 			 ORDER BY m2.sent_at DESC LIMIT 1) as last_message_time,
 			(SELECT COUNT(*) FROM messages m2 
+			 LEFT JOIN deleted_conversations dc2 ON dc2.user_id = ? AND dc2.other_user_id = u.id
 			 WHERE m2.sender_id = u.id AND m2.receiver_id = ? AND m2.read_at IS NULL
-			 AND (m2.deleted_for_user_id IS NULL OR m2.deleted_for_user_id != ?)) as unread_count
+			 AND (dc2.deleted_at IS NULL OR m2.sent_at > dc2.deleted_at)) as unread_count
 		FROM users u
 		WHERE EXISTS (
 			SELECT 1 FROM messages m
-			WHERE (m.sender_id = ? AND m.receiver_id = u.id) OR (m.sender_id = u.id AND m.receiver_id = ?)
-			AND (m.deleted_for_user_id IS NULL OR m.deleted_for_user_id != ?)
+			LEFT JOIN deleted_conversations dc ON dc.user_id = ? AND dc.other_user_id = u.id
+			WHERE ((m.sender_id = ? AND m.receiver_id = u.id) OR (m.sender_id = u.id AND m.receiver_id = ?))
+			AND (dc.deleted_at IS NULL OR m.sent_at > dc.deleted_at)
 		)
 		AND u.id != ?
 		ORDER BY last_message_time DESC
@@ -128,14 +133,16 @@ func (h *Handler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get messages between two users, excluding messages deleted by current user
+	// Get messages between two users, filtering by deletion timestamp
+	// Messages sent AFTER deleted_at are visible (if exists), otherwise all messages visible
 	rows, err := h.db.Query(
-		`SELECT id, sender_id, receiver_id, content, sent_at, delivered_at, read_at
-		 FROM messages
-		 WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
-		 AND (deleted_for_user_id IS NULL OR deleted_for_user_id != ?)
-		 ORDER BY sent_at ASC`,
-		claims.UserID, otherUserID, otherUserID, claims.UserID, claims.UserID,
+		`SELECT m.id, m.sender_id, m.receiver_id, m.content, m.sent_at, m.delivered_at, m.read_at
+		 FROM messages m
+		 LEFT JOIN deleted_conversations dc ON dc.user_id = ? AND dc.other_user_id = ?
+		 WHERE ((m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?))
+		 AND (dc.deleted_at IS NULL OR m.sent_at > dc.deleted_at)
+		 ORDER BY m.sent_at ASC`,
+		claims.UserID, otherUserID, claims.UserID, otherUserID, otherUserID, claims.UserID,
 	)
 	if err != nil {
 		log.Printf("Failed to get messages: %v", err)
