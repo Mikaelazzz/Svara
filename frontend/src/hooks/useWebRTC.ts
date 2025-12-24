@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { WebRTCPeer, AUDIO_CONSTRAINTS, VIDEO_CONSTRAINTS } from '@/lib/webrtc';
 import { useCallStore, CallType } from '@/store/callStore';
+import { useAuthStore } from '@/store/authStore';
 
 interface SignalingMessage {
   type: string;
@@ -25,8 +26,13 @@ export function useWebRTC({ wsClient }: UseWebRTCProps = {}) {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isRemoteMuted, setIsRemoteMuted] = useState(false);
   
   const peerRef = useRef<WebRTCPeer | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const { currentCall } = useCallStore();
 
   // Send signaling message via WebSocket
@@ -56,7 +62,8 @@ export function useWebRTC({ wsClient }: UseWebRTCProps = {}) {
         (candidate) => {
           if (currentCall) {
             // Determine target user - send to the OTHER user
-            const currentUserId = useCallStore.getState().currentCall?.callerId;
+            // Use auth store to get the current user's ID, not call store
+            const currentUserId = useAuthStore.getState().user?.id;
             const targetUserId = currentUserId === currentCall.callerId 
               ? currentCall.calleeId 
               : currentCall.callerId;
@@ -180,6 +187,17 @@ export function useWebRTC({ wsClient }: UseWebRTCProps = {}) {
 
   // Cleanup
   const cleanup = useCallback(() => {
+    // Cleanup audio analyzer
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    
     if (peerRef.current) {
       peerRef.current.cleanup();
       peerRef.current = null;
@@ -188,7 +206,72 @@ export function useWebRTC({ wsClient }: UseWebRTCProps = {}) {
     setRemoteStream(null);
     setIsAudioEnabled(true);
     setIsVideoEnabled(true);
+    setIsSpeaking(false);
+    setIsRemoteMuted(false);
   }, []);
+
+  // Audio level detection for speaking indicator
+  useEffect(() => {
+    if (!remoteStream) {
+      setIsSpeaking(false);
+      return;
+    }
+
+    const audioTracks = remoteStream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      console.log('🔊 No audio tracks in remote stream');
+      return;
+    }
+
+    console.log('🔊 Setting up audio level detection...');
+
+    try {
+      // Create audio context and analyzer
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+
+      const source = audioContext.createMediaStreamSource(remoteStream);
+      source.connect(analyser);
+
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      // Check audio levels periodically
+      const checkAudioLevel = () => {
+        if (!analyserRef.current) return;
+
+        analyserRef.current.getByteFrequencyData(dataArray);
+        
+        // Calculate average volume
+        const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+        
+        // Threshold for "speaking" (adjust as needed)
+        const isSpeakingNow = average > 15;
+        setIsSpeaking(isSpeakingNow);
+
+        animationFrameRef.current = requestAnimationFrame(checkAudioLevel);
+      };
+
+      checkAudioLevel();
+      console.log('✅ Audio level detection started');
+
+    } catch (error) {
+      console.error('❌ Failed to setup audio level detection:', error);
+    }
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+    };
+  }, [remoteStream]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -202,6 +285,9 @@ export function useWebRTC({ wsClient }: UseWebRTCProps = {}) {
     remoteStream,
     isAudioEnabled,
     isVideoEnabled,
+    isSpeaking,
+    isRemoteMuted,
+    setIsRemoteMuted,
     initializePeer,
     createOffer,
     createAnswer,

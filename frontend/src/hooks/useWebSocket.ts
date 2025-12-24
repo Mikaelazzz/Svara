@@ -9,6 +9,14 @@ export function useWebSocket(token: string | null) {
   const [wsClient, setWsClient] = useState<WebSocketClient | null>(null);
   const clientRef = useRef<WebSocketClient | null>(null);
   const isCallerRef = useRef(false);
+  
+  // Refs for signaling handlers - these can be set by CallManager and persist across re-renders
+  const signalingHandlersRef = useRef<{
+    onOffer?: (payload: any) => void;
+    onAnswer?: (payload: any) => void;
+    onIceCandidate?: (payload: any) => void;
+    onMuteStatus?: (payload: any) => void;
+  }>({});
 
   const addMessage = useChatStore((state) => state.addMessage);
   const updateMessage = useChatStore((state) => state.updateMessage);
@@ -51,6 +59,21 @@ export function useWebSocket(token: string | null) {
       setCurrentCall(newCall);
     });
     
+    // Call request acknowledgment - CALLER receives this with server-generated call_id
+    client.on('call-request-ack', (payload: any) => {
+      console.log('✅ CALL REQUEST ACK received:', payload);
+      // Update the current call with the server-generated call_id
+      const currentCall = useCallStore.getState().currentCall;
+      if (currentCall && currentCall.callId === '') {
+        const updatedCall = {
+          ...currentCall,
+          callId: payload.call_id,
+        };
+        console.log('📞 Updating caller call with server call_id:', updatedCall);
+        setCurrentCall(updatedCall);
+      }
+    });
+    
     // Call accepted
     client.on('call-accept', (payload: any) => {
       console.log('✅ CALL ACCEPTED:', payload);
@@ -72,6 +95,49 @@ export function useWebSocket(token: string | null) {
       console.log('📴 CALL ENDED:', payload);
       clearCurrentCall();
       isCallerRef.current = false;
+    });
+    
+    // WebRTC Signaling events - using refs so handlers can be set by CallManager
+    // These MUST be registered here to ensure they persist across component re-renders
+    
+    // Offer received
+    client.on('offer', (payload: any) => {
+      console.log('📥 OFFER received in useWebSocket:', payload);
+      if (signalingHandlersRef.current.onOffer) {
+        signalingHandlersRef.current.onOffer(payload);
+      } else {
+        console.warn('⚠️ No offer handler set');
+      }
+    });
+    
+    // Answer received
+    client.on('answer', (payload: any) => {
+      console.log('📥 ANSWER received in useWebSocket:', payload);
+      if (signalingHandlersRef.current.onAnswer) {
+        signalingHandlersRef.current.onAnswer(payload);
+      } else {
+        console.warn('⚠️ No answer handler set');
+      }
+    });
+    
+    // ICE candidate received
+    client.on('ice-candidate', (payload: any) => {
+      console.log('📥 ICE-CANDIDATE received in useWebSocket:', payload);
+      if (signalingHandlersRef.current.onIceCandidate) {
+        signalingHandlersRef.current.onIceCandidate(payload);
+      } else {
+        console.warn('⚠️ No ice-candidate handler set');
+      }
+    });
+    
+    // Mute status received
+    client.on('mute-status', (payload: any) => {
+      console.log('📥 MUTE-STATUS received in useWebSocket:', payload);
+      if (signalingHandlersRef.current.onMuteStatus) {
+        signalingHandlersRef.current.onMuteStatus(payload);
+      } else {
+        console.warn('⚠️ No mute-status handler set');
+      }
     });
     
     console.log('✅ All call event listeners registered');
@@ -141,5 +207,16 @@ export function useWebSocket(token: string | null) {
     isCallerRef.current = value;
   };
 
-  return { isConnected, wsClient, setIsCaller };
+  // Set signaling handlers - can be called by CallManager to set handlers
+  const setSignalingHandlers = (handlers: {
+    onOffer?: (payload: any) => void;
+    onAnswer?: (payload: any) => void;
+    onIceCandidate?: (payload: any) => void;
+    onMuteStatus?: (payload: any) => void;
+  }) => {
+    signalingHandlersRef.current = { ...signalingHandlersRef.current, ...handlers };
+    console.log('📞 Signaling handlers updated:', Object.keys(handlers));
+  };
+
+  return { isConnected, wsClient, setIsCaller, setSignalingHandlers };
 }

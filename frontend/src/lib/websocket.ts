@@ -102,12 +102,14 @@ export class WebSocketClient extends EventEmitter {
               // User online/offline status
               break;
             case 'call-request':
+            case 'call-request-ack':
             case 'call-accept':
             case 'call-reject':
             case 'call-end':
             case 'offer':
             case 'answer':
             case 'ice-candidate':
+            case 'mute-status':
               console.log(`📞 WebRTC signaling event: ${type}`);
               // These are handled by event listeners
               break;
@@ -295,6 +297,25 @@ export class WebSocketClient extends EventEmitter {
     };
 
     console.log('📤 Sending ICE candidate:', message);
+    this.ws.send(JSON.stringify(message));
+  }
+
+  // Send mute status to other user during call
+  sendMuteStatus(callId: string, toUserId: number, isMuted: boolean) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      type: 'mute-status',
+      payload: {
+        call_id: callId,
+        to: toUserId,
+        is_muted: isMuted,
+      },
+    };
+
+    console.log('🔇 Sending mute status:', message);
     this.ws.send(JSON.stringify(message));
   }
 

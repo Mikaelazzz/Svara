@@ -30,7 +30,7 @@ export default function ChatPage() {
   const [showNewChatModal, setShowNewChatModal] = useState(false);
 
   // Initialize WebSocket and get client reference
-  const { isConnected, wsClient, setIsCaller } = useWebSocket(accessToken);
+  const { isConnected, wsClient, setIsCaller, setSignalingHandlers } = useWebSocket(accessToken);
 
   // Debug: Log wsClient state
   useEffect(() => {
@@ -196,7 +196,7 @@ export default function ChatPage() {
       />
 
       {/* Call Manager */}
-      <CallManager wsClient={wsClient} setIsCaller={setIsCaller} />
+      <CallManager wsClient={wsClient} setIsCaller={setIsCaller} setSignalingHandlers={setSignalingHandlers} />
     </div>
   );
 }

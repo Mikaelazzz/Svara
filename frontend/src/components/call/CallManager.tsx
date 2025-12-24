@@ -15,9 +15,15 @@ import VideoCall from './VideoCall';
 interface CallManagerProps {
   wsClient: WebSocketClient | null;
   setIsCaller: (value: boolean) => void;
+  setSignalingHandlers: (handlers: {
+    onOffer?: (payload: any) => void;
+    onAnswer?: (payload: any) => void;
+    onIceCandidate?: (payload: any) => void;
+    onMuteStatus?: (payload: any) => void;
+  }) => void;
 }
 
-export default function CallManager({ wsClient, setIsCaller }: CallManagerProps) {
+export default function CallManager({ wsClient, setIsCaller, setSignalingHandlers }: CallManagerProps) {
   // IMPORTANT: Use separate selectors to ensure reactivity!
   const currentCall = useCallStore((state) => state.currentCall);
   const setCurrentCall = useCallStore((state) => state.setCurrentCall);
@@ -31,6 +37,9 @@ export default function CallManager({ wsClient, setIsCaller }: CallManagerProps)
     remoteStream,
     isAudioEnabled,
     isVideoEnabled,
+    isSpeaking,
+    isRemoteMuted,
+    setIsRemoteMuted,
     initializePeer,
     createOffer,
     createAnswer,
@@ -230,21 +239,29 @@ export default function CallManager({ wsClient, setIsCaller }: CallManagerProps)
       }
     };
 
-    // Register event listeners (call-request is handled in useWebSocket hook)
-    console.log('✅ Registering event listeners (excluding call-request)...');
-    
+    // Mute status received from other user
+    const handleMuteStatusReceived = (payload: any) => {
+      console.log('🔇 Mute status received:', payload);
+      setIsRemoteMuted(payload.is_muted);
+    };
+
+    // Use setSignalingHandlers instead of direct registration
+    // This ensures handlers persist across component re-renders
+    console.log('✅ Setting signaling handlers via setSignalingHandlers...');
+    setSignalingHandlers({
+      onOffer: handleOfferReceived,
+      onAnswer: handleAnswerReceived,
+      onIceCandidate: handleIceCandidateReceived,
+      onMuteStatus: handleMuteStatusReceived,
+    });
+
+    // These listeners still need direct registration as they're not signaling
     wsClient.on('call-accept', handleCallAccept);
     console.log('✅ Registered: call-accept');
     wsClient.on('call-reject', handleCallReject);
     console.log('✅ Registered: call-reject');
     wsClient.on('call-end', handleCallEnd);
     console.log('✅ Registered: call-end');
-    wsClient.on('offer', handleOfferReceived);
-    console.log('✅ Registered: offer');
-    wsClient.on('answer', handleAnswerReceived);
-    console.log('✅ Registered: answer');
-    wsClient.on('ice-candidate', handleIceCandidateReceived);
-    console.log('✅ Registered: ice-candidate');
 
     console.log('✅ ALL event listeners registered successfully');
 
@@ -254,12 +271,10 @@ export default function CallManager({ wsClient, setIsCaller }: CallManagerProps)
       wsClient.off('call-accept', handleCallAccept);
       wsClient.off('call-reject', handleCallReject);
       wsClient.off('call-end', handleCallEnd);
-      wsClient.off('offer', handleOfferReceived);
-      wsClient.off('answer', handleAnswerReceived);
-      wsClient.off('ice-candidate', handleIceCandidateReceived);
+      // Signaling handlers don't need cleanup - they're managed by refs
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsClient, setCurrentCall, setCallStatus, clearCurrentCall, initializePeer, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup]);
+  }, [wsClient, setCurrentCall, setCallStatus, clearCurrentCall, initializePeer, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, setSignalingHandlers]);
 
   // Handle call acceptance - CALLEE accepts
   const handleAcceptCall = async () => {
@@ -297,6 +312,26 @@ export default function CallManager({ wsClient, setIsCaller }: CallManagerProps)
     hasInitializedRef.current = false;
     isCallerRef.current = false;
     peerInitializedRef.current = false;
+  };
+
+  // Handle toggle audio with mute status broadcast
+  const handleToggleAudio = () => {
+    if (!currentCall || !wsClient) {
+      toggleAudio();
+      return;
+    }
+    
+    // Toggle local audio
+    toggleAudio();
+    
+    // Send mute status to other user
+    const currentUserId = useAuthStore.getState().user?.id;
+    const otherUserId = currentUserId === currentCall.callerId 
+      ? currentCall.calleeId 
+      : currentCall.callerId;
+    
+    // After toggle, isAudioEnabled will be the opposite
+    wsClient.sendMuteStatus(currentCall.callId, otherUserId, isAudioEnabled);
   };
 
   // Handle call cancellation (outgoing)
@@ -391,7 +426,7 @@ export default function CallManager({ wsClient, setIsCaller }: CallManagerProps)
             remoteStream={remoteStream}
             isAudioEnabled={isAudioEnabled}
             isVideoEnabled={isVideoEnabled}
-            onToggleAudio={toggleAudio}
+            onToggleAudio={handleToggleAudio}
             onToggleVideo={toggleVideo}
             onEndCall={handleEndCall}
           />
@@ -403,7 +438,9 @@ export default function CallManager({ wsClient, setIsCaller }: CallManagerProps)
             localStream={localStream}
             remoteStream={remoteStream}
             isAudioEnabled={isAudioEnabled}
-            onToggleAudio={toggleAudio}
+            isSpeaking={isSpeaking}
+            isRemoteMuted={isRemoteMuted}
+            onToggleAudio={handleToggleAudio}
             onEndCall={handleEndCall}
           />
         );

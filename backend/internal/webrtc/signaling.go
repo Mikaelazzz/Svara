@@ -97,13 +97,25 @@ func (sh *SignalingHandler) handleCallRequest(client *chat.Client, msg *Signalin
 		log.Printf("⚠️ Error storing call: %v", err)
 	}
 
-	// Send call request to callee ONLY
+	// Send call request to callee
 	msg.CallID = pc.CallID
 	log.Printf("📤 Forwarding call request to callee (user %d) with call_id %s", msg.To, pc.CallID)
 	sh.forwardMessage(calleeClient, msg)
 
-	// DO NOT send back to caller - caller already knows they initiated the call!
-	log.Printf("✅ Call request sent to callee, caller does not need confirmation")
+	// CRITICAL FIX: Send call_id confirmation back to caller
+	// This allows the caller to use the correct call_id for subsequent signaling messages
+	ackMsg := &SignalingMessage{
+		Type:      "call-request-ack",
+		CallID:    pc.CallID,
+		From:      msg.To,
+		To:        int64(client.UserID),
+		CallType:  msg.CallType,
+		Timestamp: msg.Timestamp,
+	}
+	log.Printf("📤 Sending call-request-ack to caller (user %d) with call_id %s", client.UserID, pc.CallID)
+	sh.forwardMessage(client, ackMsg)
+
+	log.Printf("✅ Call request sent to both callee and caller with call_id %s", pc.CallID)
 }
 
 // handleCallAccept processes call acceptance
