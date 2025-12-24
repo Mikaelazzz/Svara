@@ -5,7 +5,7 @@ import { Send, Loader2, Phone, Video } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
 import { useCallStore } from '@/store/callStore';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { WebSocketClient } from '@/lib/websocket';
 import api from '@/lib/api';
 
 import MessageBubble from './MessageBubble';
@@ -14,25 +14,67 @@ import TypingIndicator from './TypingIndicator';
 interface ChatWindowProps {
   userId: number;
   onClose: () => void;
+  wsClient: WebSocketClient | null;
 }
 
-export default function ChatWindow({ userId, onClose }: ChatWindowProps) {
+export default function ChatWindow({ userId, onClose, wsClient }: ChatWindowProps) {
   const currentUser = useAuthStore((state) => state.user);
   const messages = useChatStore((state) => state.messages.get(userId) || []);
   const setMessages = useChatStore((state) => state.setMessages);
   const conversations = useChatStore((state) => state.conversations);
   
-  const { sendMessage, sendTyping, markAsRead, typingUsers } = useWebSocket(
-    useAuthStore((state) => state.accessToken)
-  );
+  // const { sendMessage, sendTyping, markAsRead, typingUsers } = useWebSocket(
+  //   useAuthStore((state) => state.accessToken)
+  // );
+
+  // AFTER - Uses shared instance ✅
+
+  const sendMessage = (receiverId: number, content: string) => {
+    wsClient?.sendMessage(receiverId, content);
+  };
+
+  const sendTyping = (receiverId: number, isTyping: boolean) => {
+    wsClient?.sendTyping(receiverId, isTyping);
+  };
+
+  const markAsRead = (messageId: number) => {
+    wsClient?.sendReceipt(messageId, 'read');
+  };
+
   const { initiateCall } = useCallStore();
 
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(true);
   const [otherUser, setOtherUser] = useState<any>(null);
+  const [typingUsers, setTypingUsers] = useState<Set<number>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const loadedRef = useRef(false);
+
+  // Listen for typing events from wsClient
+  useEffect(() => {
+    if (!wsClient) return;
+
+    const handleTyping = (payload: { user_id: number; is_typing: boolean }) => {
+      if (payload.user_id === userId) {
+        setTypingUsers(prev => {
+          const newSet = new Set(prev);
+          if (payload.is_typing) {
+            newSet.add(payload.user_id);
+          } else {
+            newSet.delete(payload.user_id);
+          }
+          return newSet;
+        });
+      }
+    };
+
+    wsClient.on('typing', handleTyping);
+
+    return () => {
+      wsClient.off('typing', handleTyping);
+    };
+  }, [wsClient, userId]);
 
   // Helper function to format time
   const formatTime = (lastSeen?: string) => {

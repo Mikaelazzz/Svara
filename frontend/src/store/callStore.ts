@@ -83,7 +83,9 @@ export const useCallStore = create<CallState>((set) => ({
   },
 
   setCurrentCall: (call) => {
+    console.log('🏪 Zustand setCurrentCall called with:', call);
     set({ currentCall: call });
+    console.log('🏪 Zustand state updated');
   },
 
   addToHistory: (call) => {

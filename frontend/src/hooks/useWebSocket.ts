@@ -1,86 +1,107 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { WebSocketClient } from '@/lib/websocket';
 import { useChatStore } from '@/store/chatStore';
 import { useAuthStore } from '@/store/authStore';
-import type { Message } from '@/types/chat';
+import { useCallStore } from '@/store/callStore';
 
 export function useWebSocket(token: string | null) {
   const [isConnected, setIsConnected] = useState(false);
-  const [typingUsers, setTypingUsers] = useState<Set<number>>(new Set());
-  const wsClient = useRef<WebSocketClient | null>(null);
-  
+  const [wsClient, setWsClient] = useState<WebSocketClient | null>(null);
+  const clientRef = useRef<WebSocketClient | null>(null);
+  const isCallerRef = useRef(false);
+
   const addMessage = useChatStore((state) => state.addMessage);
   const updateMessage = useChatStore((state) => state.updateMessage);
   const updateConversationWithMessage = useChatStore((state) => state.updateConversationWithMessage);
   const updateConversationLastMessage = useChatStore((state) => state.updateConversationLastMessage);
   const updateUserStatus = useChatStore((state) => state.updateUserStatus);
   const currentUserId = useAuthStore((state) => state.user?.id);
+  
+  // Call store actions
+  const setCurrentCall = useCallStore((state) => state.setCurrentCall);
+  const setCallStatus = useCallStore((state) => state.setCallStatus);
+  const clearCurrentCall = useCallStore((state) => state.clearCurrentCall);
 
   useEffect(() => {
     if (!token) {
-      console.log('No token, skipping WebSocket connection');
-      setIsConnected(false);
+      console.log('No token provided, skipping WebSocket connection');
       return;
     }
 
-    console.log('Initializing WebSocket with token');
+    console.log('🔌 Initializing WebSocket connection...');
     const client = new WebSocketClient(token);
-    wsClient.current = client;
+    clientRef.current = client;
 
-    client.connect()
-      .then(() => {
-        console.log('WebSocket connected, setting up event listeners');
-        setIsConnected(true);
-      })
-      .catch((error) => {
-        // console.error('Failed to connect WebSocket:', error);
-        setIsConnected(false);
-      });
+    // CRITICAL: Register ALL call event listeners IMMEDIATELY when client is created
+    console.log('📞 Registering ALL call event listeners IMMEDIATELY...');
+    
+    // Incoming call request
+    client.on('call-request', (payload: any) => {
+      console.log('📞 INCOMING CALL REQUEST:', payload);
+      isCallerRef.current = false;
+      const newCall = {
+        callId: payload.call_id,
+        callerId: payload.from,
+        calleeId: payload.to,
+        type: payload.call_type,
+        status: 'ringing' as const,
+        startedAt: new Date(),
+      };
+      console.log('📞 Setting call state (CALLEE):', newCall);
+      setCurrentCall(newCall);
+    });
+    
+    // Call accepted
+    client.on('call-accept', (payload: any) => {
+      console.log('✅ CALL ACCEPTED:', payload);
+      if (isCallerRef.current) {
+        console.log('✅ We are CALLER, updating status to active');
+        setCallStatus('active');
+      }
+    });
+    
+    // Call rejected
+    client.on('call-reject', (payload: any) => {
+      console.log('❌ CALL REJECTED:', payload);
+      clearCurrentCall();
+      isCallerRef.current = false;
+    });
+    
+    // Call ended
+    client.on('call-end', (payload: any) => {
+      console.log('📴 CALL ENDED:', payload);
+      clearCurrentCall();
+      isCallerRef.current = false;
+    });
+    
+    console.log('✅ All call event listeners registered');
 
-    // Handle incoming messages
-    client.on('message', (payload: Message) => {
+    // Chat event listeners
+    client.on('message', (payload: any) => {
       console.log('📨 Received message event:', payload);
       const otherUserId = payload.sender_id === currentUserId ? payload.receiver_id : payload.sender_id;
       
-      console.log('Adding message to store:', payload);
       addMessage(payload);
       
-      // Only update conversation if message is FROM another user (not sent by current user)
       if (payload.sender_id !== currentUserId) {
-        console.log('Updating conversation with message from other user');
         updateConversationWithMessage(otherUserId, `User ${otherUserId}`, payload);
       } else {
-        console.log('Updating last message only - message sent by current user');
         updateConversationLastMessage(otherUserId, payload);
       }
       
-      console.log('Sending delivery receipt');
       client.sendReceipt(payload.id, 'delivered');
     });
 
-    // Handle message sent confirmation
-    client.on('message_sent', (payload: Message) => {
+    client.on('message_sent', (payload: any) => {
       console.log('✅ Message sent confirmation:', payload);
       addMessage(payload);
-      // Update conversation last message for sender (without incrementing unread)
       updateConversationLastMessage(payload.receiver_id, payload);
     });
 
-    // Handle typing indicators
     client.on('typing', (payload: { user_id: number; is_typing: boolean }) => {
       console.log('⌨️ Typing indicator:', payload);
-      setTypingUsers(prev => {
-        const newSet = new Set(prev);
-        if (payload.is_typing) {
-          newSet.add(payload.user_id);
-        } else {
-          newSet.delete(payload.user_id);
-        }
-        return newSet;
-      });
     });
 
-    // Handle message receipts
     client.on('receipt', (payload: { message_id: number; status: string }) => {
       console.log('📬 Receipt:', payload);
       updateMessage(payload.message_id, {
@@ -89,42 +110,36 @@ export function useWebSocket(token: string | null) {
       });
     });
 
-    // Handle user status updates (REAL-TIME)
-    client.on('user_status', (payload: { user_id: number; status: string }) => {
+    client.on('user_status', (payload: { user_id: number; status: 'online' | 'offline' }) => {
       console.log('👤 User status update:', payload);
-      updateUserStatus(payload.user_id, payload.status as 'online' | 'offline');
+      updateUserStatus(payload.user_id, payload.status);
     });
 
-    console.log('All WebSocket event listeners registered');
+    // Connect
+    client
+      .connect()
+      .then(() => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+        setWsClient(client);
+      })
+      .catch((error) => {
+        console.error('❌ WebSocket connection failed:', error);
+        setIsConnected(false);
+      });
 
-    // Cleanup
     return () => {
-      console.log('Cleaning up WebSocket connection');
+      console.log('🔌 Cleaning up WebSocket connection');
       client.disconnect();
       setIsConnected(false);
+      clientRef.current = null;
     };
-  }, [token, addMessage, updateMessage, updateConversationWithMessage, updateConversationLastMessage, updateUserStatus, currentUserId]);
+  }, [token, addMessage, updateMessage, updateConversationWithMessage, updateConversationLastMessage, updateUserStatus, currentUserId, setCurrentCall, setCallStatus, clearCurrentCall]);
 
-  const sendMessage = (receiverId: number, content: string) => {
-    console.log('Sending message via WebSocket:', { receiverId, content });
-    wsClient.current?.sendMessage(receiverId, content);
+  // Expose isCallerRef setter for CallManager
+  const setIsCaller = (value: boolean) => {
+    isCallerRef.current = value;
   };
 
-  const sendTyping = (receiverId: number, isTyping: boolean) => {
-    wsClient.current?.sendTyping(receiverId, isTyping);
-  };
-
-  const markAsRead = (messageId: number) => {
-    console.log('Marking message as read:', messageId);
-    wsClient.current?.sendReceipt(messageId, 'read');
-  };
-
-  return {
-    isConnected,
-    typingUsers,
-    sendMessage,
-    sendTyping,
-    markAsRead,
-    wsClient: wsClient.current,
-  };
+  return { isConnected, wsClient, setIsCaller };
 }

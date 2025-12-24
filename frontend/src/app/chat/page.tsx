@@ -30,7 +30,7 @@ export default function ChatPage() {
   const [showNewChatModal, setShowNewChatModal] = useState(false);
 
   // Initialize WebSocket and get client reference
-  const { isConnected, wsClient } = useWebSocket(accessToken);
+  const { isConnected, wsClient, setIsCaller } = useWebSocket(accessToken);
 
   // Debug: Log wsClient state
   useEffect(() => {
@@ -165,6 +165,7 @@ export default function ChatPage() {
           <ChatWindow 
             userId={activeConversationId} 
             onClose={() => setActiveConversation(null)}
+            wsClient={wsClient}  // ← Pass the shared instance
           />
         ) : (
           <div className="flex items-center justify-center h-full bg-gray-50">
@@ -195,7 +196,7 @@ export default function ChatPage() {
       />
 
       {/* Call Manager */}
-      <CallManager wsClient={wsClient} />
+      <CallManager wsClient={wsClient} setIsCaller={setIsCaller} />
     </div>
   );
 }

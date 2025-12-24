@@ -168,6 +168,37 @@ func (pm *PeerManager) IsUserInCall(userID int64) bool {
 	return exists
 }
 
+// CleanupUserCalls removes all calls for a user (called on disconnect)
+func (pm *PeerManager) CleanupUserCalls(userID int64) []string {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	var cleanedCallIDs []string
+
+	// Find the user's active call
+	callID, exists := pm.userCalls[userID]
+	if !exists {
+		return cleanedCallIDs
+	}
+
+	// Get the call to find the other participant
+	pc, exists := pm.connections[callID]
+	if !exists {
+		// Inconsistent state, just remove the user mapping
+		delete(pm.userCalls, userID)
+		return cleanedCallIDs
+	}
+
+	// Remove both users from the call
+	delete(pm.userCalls, pc.CallerID)
+	delete(pm.userCalls, pc.CalleeID)
+	delete(pm.connections, callID)
+
+	cleanedCallIDs = append(cleanedCallIDs, callID)
+
+	return cleanedCallIDs
+}
+
 // Custom errors
 var (
 	ErrUserBusy     = &PeerError{Message: "user is already in a call"}

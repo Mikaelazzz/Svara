@@ -50,6 +50,15 @@ func (h *Hub) Run() {
 				close(client.Send)
 				log.Printf("Client unregistered: %d, total clients: %d", client.UserID, len(h.clients))
 
+				// Clean up any active calls
+				if h.signalingHandler != nil {
+					if handler, ok := h.signalingHandler.(interface {
+						OnClientDisconnect(int64)
+					}); ok {
+						handler.OnClientDisconnect(int64(client.UserID))
+					}
+				}
+
 				// Broadcast user offline status to all clients
 				h.broadcastUserStatus(client.UserID, "offline")
 			}

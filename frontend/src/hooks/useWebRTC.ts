@@ -55,10 +55,16 @@ export function useWebRTC({ wsClient }: UseWebRTCProps = {}) {
         // On ICE candidate
         (candidate) => {
           if (currentCall) {
+            // Determine target user - send to the OTHER user
+            const currentUserId = useCallStore.getState().currentCall?.callerId;
+            const targetUserId = currentUserId === currentCall.callerId 
+              ? currentCall.calleeId 
+              : currentCall.callerId;
+            
             sendSignalingMessage({
               type: 'ice-candidate',
               call_id: currentCall.callId,
-              to: currentCall.calleeId,
+              to: targetUserId,
               candidate: {
                 candidate: candidate.candidate,
                 sdpMid: candidate.sdpMid || '',

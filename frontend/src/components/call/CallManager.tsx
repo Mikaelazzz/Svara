@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCallStore } from '@/store/callStore';
 import { useAuthStore } from '@/store/authStore';
+import { useChatStore } from '@/store/chatStore';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { WebSocketClient } from '@/lib/websocket';
 
@@ -13,10 +14,17 @@ import VideoCall from './VideoCall';
 
 interface CallManagerProps {
   wsClient: WebSocketClient | null;
+  setIsCaller: (value: boolean) => void;
 }
 
-export default function CallManager({ wsClient }: CallManagerProps) {
-  const { currentCall, setCurrentCall, setCallStatus, clearCurrentCall } = useCallStore();
+export default function CallManager({ wsClient, setIsCaller }: CallManagerProps) {
+  // IMPORTANT: Use separate selectors to ensure reactivity!
+  const currentCall = useCallStore((state) => state.currentCall);
+  const setCurrentCall = useCallStore((state) => state.setCurrentCall);
+  const setCallStatus = useCallStore((state) => state.setCallStatus);
+  const clearCurrentCall = useCallStore((state) => state.clearCurrentCall);
+  
+  console.log('🔧 CallManager render, currentCall:', currentCall);
   
   const {
     localStream,
@@ -36,6 +44,8 @@ export default function CallManager({ wsClient }: CallManagerProps) {
 
   const hasInitializedRef = useRef(false);
   const isCallerRef = useRef(false);
+  const peerInitializedRef = useRef(false);
+  const [, forceUpdate] = useState({});
 
   // Debug: Log when component mounts/unmounts
   useEffect(() => {
@@ -44,6 +54,22 @@ export default function CallManager({ wsClient }: CallManagerProps) {
       console.log('🔧 CallManager unmounting');
     };
   }, [wsClient]);
+
+  // Debug: Track currentCall changes AND force re-render
+  useEffect(() => {
+    console.log('🔄 CallManager: currentCall changed:', currentCall);
+    if (currentCall) {
+      console.log('🔄 Call details:', {
+        callId: currentCall.callId,
+        status: currentCall.status,
+        callerId: currentCall.callerId,
+        calleeId: currentCall.calleeId,
+        type: currentCall.type
+      });
+      console.log('🔄 Forcing component re-render...');
+      forceUpdate({});
+    }
+  }, [currentCall]);
 
   // Send call request when outgoing call is initiated (but DON'T initialize peer yet)
   useEffect(() => {
@@ -54,10 +80,38 @@ export default function CallManager({ wsClient }: CallManagerProps) {
         wsConnected: wsClient.isConnected()
       });
       wsClient.sendCallRequest(currentCall.calleeId, currentCall.type);
-      isCallerRef.current = true;
+      setIsCaller(true);
       hasInitializedRef.current = true; // Mark as sent
     }
-  }, [currentCall, wsClient]);
+  }, [currentCall, wsClient, setIsCaller]);
+
+  // CRITICAL: Initialize WebRTC when call becomes active (for CALLER)
+  useEffect(() => {
+    const initWebRTCForCaller = async () => {
+      if (!currentCall || !wsClient) return;
+      
+      // Check if we're the caller and status just became active
+      const currentUserId = useAuthStore.getState().user?.id;
+      const isCaller = currentUserId === currentCall.callerId;
+      
+      if (currentCall.status === 'active' && isCaller && !peerInitializedRef.current) {
+        console.log('🔧 [useEffect] Status became active, initializing WebRTC for caller...');
+        peerInitializedRef.current = true;
+        
+        try {
+          await initializePeer(currentCall.type);
+          console.log('📤 Creating and sending offer...');
+          await createOffer();
+          console.log('✅ WebRTC offer sent successfully!');
+        } catch (error) {
+          console.error('Failed to initialize WebRTC:', error);
+        }
+      }
+    };
+    
+    initWebRTCForCaller();
+  }, [currentCall?.status, currentCall?.callerId, currentCall?.type, wsClient, initializePeer, createOffer]);
+
 
   // Listen to WebSocket call events - MUST register IMMEDIATELY when wsClient is available
   useEffect(() => {
@@ -68,25 +122,18 @@ export default function CallManager({ wsClient }: CallManagerProps) {
 
     console.log('🎧 CallManager: Registering WebSocket event listeners...');
 
-    // Incoming call request
-    const handleCallRequest = (payload: any) => {
-      console.log('📞 Incoming call request:', payload);
-      isCallerRef.current = false;
-      setCurrentCall({
-        callId: payload.call_id,
-        callerId: payload.from,
-        calleeId: payload.to,
-        type: payload.call_type,
-        status: 'ringing',
-        startedAt: new Date(),
-      });
-    };
 
     // Call accepted - CALLER receives this
     const handleCallAccept = async (payload: any) => {
-      console.log('✅ Call accepted:', payload);
+      console.log('✅ Call accepted in CallManager:', payload);
       
-      if (isCallerRef.current && currentCall) {
+      // Determine if we are the caller by comparing IDs
+      const currentUserId = useAuthStore.getState().user?.id;
+      const isCaller = currentUserId === currentCall?.callerId;
+      
+      console.log('📞 handleCallAccept check:', { currentUserId, callerId: currentCall?.callerId, isCaller });
+      
+      if (isCaller && currentCall) {
         try {
           // NOW initialize peer connection for caller
           console.log('🔧 Initializing peer connection for caller...');
@@ -98,10 +145,13 @@ export default function CallManager({ wsClient }: CallManagerProps) {
           
           // Update status
           setCallStatus('active');
+          console.log('✅ WebRTC offer sent successfully!');
         } catch (error) {
           console.error('Failed to initialize peer or create offer:', error);
           handleCancelCall();
         }
+      } else {
+        console.log('ℹ️ Not the caller, skipping WebRTC initialization');
       }
     };
 
@@ -112,6 +162,7 @@ export default function CallManager({ wsClient }: CallManagerProps) {
       clearCurrentCall();
       hasInitializedRef.current = false;
       isCallerRef.current = false;
+      peerInitializedRef.current = false;
     };
 
     // Call ended
@@ -121,34 +172,51 @@ export default function CallManager({ wsClient }: CallManagerProps) {
       clearCurrentCall();
       hasInitializedRef.current = false;
       isCallerRef.current = false;
+      peerInitializedRef.current = false;
     };
 
     // SDP Offer received - CALLEE receives this
     const handleOfferReceived = async (payload: any) => {
-      console.log('📥 Offer received:', payload);
+      console.log('📥 Offer received in CallManager:', payload);
       
-      if (!isCallerRef.current) {
+      // Determine if we are the callee
+      const currentUserId = useAuthStore.getState().user?.id;
+      const isCallee = currentUserId === currentCall?.calleeId;
+      
+      console.log('📞 handleOfferReceived check:', { currentUserId, calleeId: currentCall?.calleeId, isCallee });
+      
+      if (isCallee && currentCall) {
         try {
-          // Handle the offer
+          // Handle the offer (peer should already be initialized in handleAcceptCall)
           await handleOffer(payload.sdp);
-          console.log('✅ Offer processed successfully');
+          console.log('✅ Offer processed and answer sent successfully');
         } catch (error) {
           console.error('Failed to handle offer:', error);
         }
+      } else {
+        console.log('ℹ️ Not the callee, skipping offer handling');
       }
     };
 
     // SDP Answer received - CALLER receives this
     const handleAnswerReceived = async (payload: any) => {
-      console.log('📥 Answer received:', payload);
+      console.log('📥 Answer received in CallManager:', payload);
       
-      if (isCallerRef.current) {
+      // Determine if we are the caller
+      const currentUserId = useAuthStore.getState().user?.id;
+      const isCaller = currentUserId === currentCall?.callerId;
+      
+      console.log('📞 handleAnswerReceived check:', { currentUserId, callerId: currentCall?.callerId, isCaller });
+      
+      if (isCaller) {
         try {
           await handleAnswer(payload.sdp);
           console.log('✅ Answer processed successfully');
         } catch (error) {
           console.error('Failed to handle answer:', error);
         }
+      } else {
+        console.log('ℹ️ Not the caller, skipping answer handling');
       }
     };
 
@@ -162,31 +230,27 @@ export default function CallManager({ wsClient }: CallManagerProps) {
       }
     };
 
-    // Register event listeners
-    console.log('✅ Registering event listeners:', [
-      'call-request',
-      'call-accept',
-      'call-reject',
-      'call-end',
-      'offer',
-      'answer',
-      'ice-candidate'
-    ]);
+    // Register event listeners (call-request is handled in useWebSocket hook)
+    console.log('✅ Registering event listeners (excluding call-request)...');
     
-    wsClient.on('call-request', handleCallRequest);
     wsClient.on('call-accept', handleCallAccept);
+    console.log('✅ Registered: call-accept');
     wsClient.on('call-reject', handleCallReject);
+    console.log('✅ Registered: call-reject');
     wsClient.on('call-end', handleCallEnd);
+    console.log('✅ Registered: call-end');
     wsClient.on('offer', handleOfferReceived);
+    console.log('✅ Registered: offer');
     wsClient.on('answer', handleAnswerReceived);
+    console.log('✅ Registered: answer');
     wsClient.on('ice-candidate', handleIceCandidateReceived);
+    console.log('✅ Registered: ice-candidate');
 
-    console.log('✅ Event listeners registered successfully');
+    console.log('✅ ALL event listeners registered successfully');
 
     // Cleanup
     return () => {
       console.log('🧹 Cleaning up CallManager event listeners');
-      wsClient.off('call-request', handleCallRequest);
       wsClient.off('call-accept', handleCallAccept);
       wsClient.off('call-reject', handleCallReject);
       wsClient.off('call-end', handleCallEnd);
@@ -194,7 +258,8 @@ export default function CallManager({ wsClient }: CallManagerProps) {
       wsClient.off('answer', handleAnswerReceived);
       wsClient.off('ice-candidate', handleIceCandidateReceived);
     };
-  }, [wsClient, setCurrentCall, setCallStatus, clearCurrentCall]); // REMOVED currentCall from dependencies!
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsClient, setCurrentCall, setCallStatus, clearCurrentCall, initializePeer, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup]);
 
   // Handle call acceptance - CALLEE accepts
   const handleAcceptCall = async () => {
@@ -231,6 +296,7 @@ export default function CallManager({ wsClient }: CallManagerProps) {
     clearCurrentCall();
     hasInitializedRef.current = false;
     isCallerRef.current = false;
+    peerInitializedRef.current = false;
   };
 
   // Handle call cancellation (outgoing)
@@ -242,6 +308,7 @@ export default function CallManager({ wsClient }: CallManagerProps) {
     clearCurrentCall();
     hasInitializedRef.current = false;
     isCallerRef.current = false;
+    peerInitializedRef.current = false;
   };
 
   // Handle call end
@@ -257,6 +324,7 @@ export default function CallManager({ wsClient }: CallManagerProps) {
     clearCurrentCall();
     hasInitializedRef.current = false;
     isCallerRef.current = false;
+    peerInitializedRef.current = false;
   };
 
   // Render appropriate UI based on call status
@@ -277,14 +345,21 @@ export default function CallManager({ wsClient }: CallManagerProps) {
     // Determine which user we are
     const currentUserId = useAuthStore.getState().user?.id;
     
-    // Show the OTHER user's name
-    if (currentUserId === currentCall.callerId) {
-      // We are the caller, show callee's name
-      return `User ${currentCall.calleeId}`;
-    } else {
-      // We are the callee, show caller's name
-      return `User ${currentCall.callerId}`;
+    // Get the OTHER user's ID
+    const otherUserId = currentUserId === currentCall.callerId 
+      ? currentCall.calleeId 
+      : currentCall.callerId;
+    
+    // Try to get name from conversations
+    const conversations = useChatStore.getState().conversations;
+    const conversation = conversations.find((c: { user_id: number; name?: string }) => c.user_id === otherUserId);
+    
+    if (conversation?.name) {
+      return conversation.name;
     }
+    
+    // Fallback to User ID
+    return `User ${otherUserId}`;
   };
 
   switch (currentCall.status) {

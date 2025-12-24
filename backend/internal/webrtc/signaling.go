@@ -346,3 +346,46 @@ func (sh *SignalingHandler) endCall(callID string, duration int) error {
 	_, err := sh.db.DB.Exec(query, CallStatusEnded, time.Now(), duration, callID)
 	return err
 }
+
+// OnClientDisconnect handles cleanup when a client disconnects
+func (sh *SignalingHandler) OnClientDisconnect(userID int64) {
+	log.Printf("🔌 Handling disconnect for user %d", userID)
+
+	// Get the user's active call before cleanup
+	pc, exists := sh.peerManager.GetUserCall(userID)
+	if !exists {
+		log.Printf("✅ User %d had no active calls", userID)
+		return
+	}
+
+	log.Printf("⚠️ User %d was in call %s, cleaning up", userID, pc.CallID)
+
+	// Clean up the call from PeerManager
+	cleanedCallIDs := sh.peerManager.CleanupUserCalls(userID)
+
+	// Update database
+	for _, callID := range cleanedCallIDs {
+		duration := int(time.Since(pc.StartedAt).Seconds())
+		if err := sh.endCall(callID, duration); err != nil {
+			log.Printf("Error ending call %s: %v", callID, err)
+		}
+	}
+
+	// Notify the other party that the call ended
+	otherUserID := pc.CallerID
+	if userID == int64(pc.CallerID) {
+		otherUserID = pc.CalleeID
+	}
+
+	otherClient := sh.hub.GetClient(otherUserID)
+	if otherClient != nil {
+		msg := &SignalingMessage{
+			Type:   MessageTypeCallEnd,
+			CallID: pc.CallID,
+			From:   int64(userID),
+			To:     otherUserID,
+		}
+		sh.forwardMessage(otherClient, msg)
+		log.Printf("📤 Notified user %d that call ended due to disconnect", otherUserID)
+	}
+}
