@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 	"github.com/yourusername/svara/internal/auth"
 	"github.com/yourusername/svara/pkg/response"
@@ -243,6 +244,52 @@ func (h *Handler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, "Users found", users)
+}
+
+// GetUserByID returns user details by ID
+func (h *Handler) GetUserByID(w http.ResponseWriter, r *http.Request) {
+	_, ok := auth.GetUserFromContext(r.Context())
+	if !ok {
+		response.Unauthorized(w, "Unauthorized")
+		return
+	}
+
+	userIDStr := chi.URLParam(r, "userId")
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.BadRequest(w, "Invalid user ID")
+		return
+	}
+
+	var user User
+	var email, phone, lastSeen sql.NullString
+
+	err = h.db.QueryRow(
+		`SELECT id, name, email, phone, status, last_seen FROM users WHERE id = ?`,
+		userID,
+	).Scan(&user.ID, &user.Name, &email, &phone, &user.Status, &lastSeen)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			response.NotFound(w, "User not found")
+			return
+		}
+		log.Printf("Failed to get user: %v", err)
+		response.InternalError(w, "Failed to get user")
+		return
+	}
+
+	if email.Valid {
+		user.Email = email.String
+	}
+	if phone.Valid {
+		user.Phone = phone.String
+	}
+	if lastSeen.Valid {
+		user.LastSeen = lastSeen.String
+	}
+
+	response.Success(w, "User retrieved successfully", user)
 }
 
 var upgrader = websocket.Upgrader{

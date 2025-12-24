@@ -89,6 +89,7 @@ func main() {
 				r.Get("/messages", chatHandler.GetMessages)
 				r.Get("/conversations", chatHandler.GetConversations)
 				r.Get("/search", chatHandler.SearchUsers)
+				r.Get("/users/{userId}", chatHandler.GetUserByID)
 				r.Delete("/conversations/{userId}", chatHandler.DeleteConversation)
 			})
 		})

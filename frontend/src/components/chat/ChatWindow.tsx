@@ -133,12 +133,19 @@ export default function ChatWindow({ userId, onClose, wsClient }: ChatWindowProp
         avatar_url: conv.avatar_url,
       });
     } else {
-      // Fetch user info if not in conversations
+      // Set fallback immediately while fetching actual user info
+      setOtherUser({
+        id: userId,
+        name: `User ${userId}`,
+        status: 'offline',
+      });
+      
+      // Fetch user info from API
       const fetchUserInfo = async () => {
         try {
-          const response = await api.get(`/chat/search?q=${userId}`);
-          const users = response.data.data || [];
-          const user = users.find((u: any) => u.id === userId);
+          // Use correct endpoint path matching backend route
+          const response = await api.get(`/chat/users/${userId}`);
+          const user = response.data.data;
           if (user) {
             setOtherUser({
               id: user.id,
@@ -148,12 +155,23 @@ export default function ChatWindow({ userId, onClose, wsClient }: ChatWindowProp
             });
           }
         } catch (error) {
-          console.error('Failed to fetch user info:', error);
-          setOtherUser({
-            id: userId,
-            name: `User ${userId}`,
-            status: 'offline',
-          });
+          // If /users/{id} doesn't exist, try search endpoint
+          try {
+            const searchResponse = await api.get(`/chat/search?q=${userId}`);
+            const users = searchResponse.data.data || [];
+            const user = users.find((u: any) => u.id === userId);
+            if (user) {
+              setOtherUser({
+                id: user.id,
+                name: user.name,
+                status: user.status,
+                last_seen: user.last_seen,
+              });
+            }
+          } catch (searchError) {
+            console.error('Failed to fetch user info:', searchError);
+            // Keep the fallback name set above
+          }
         }
       };
       fetchUserInfo();

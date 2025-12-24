@@ -168,6 +168,14 @@ func (h *Hub) handleChatMessage(clientMsg *ClientMessage) {
 	receiverID := int(payload["receiver_id"].(float64))
 	content := payload["content"].(string)
 
+	// Fetch sender name from database
+	var senderName string
+	err := h.db.QueryRow("SELECT name FROM users WHERE id = ?", clientMsg.client.UserID).Scan(&senderName)
+	if err != nil {
+		log.Printf("Failed to get sender name: %v", err)
+		senderName = "" // Will use empty string as fallback
+	}
+
 	// Save message to database
 	result, err := h.db.Exec(
 		`INSERT INTO messages (sender_id, receiver_id, content, encrypted, sent_at) 
@@ -181,10 +189,11 @@ func (h *Hub) handleChatMessage(clientMsg *ClientMessage) {
 
 	messageID, _ := result.LastInsertId()
 
-	// Create message response
+	// Create message response with sender name
 	msg := Message{
 		ID:         int(messageID),
 		SenderID:   clientMsg.client.UserID,
+		SenderName: senderName,
 		ReceiverID: receiverID,
 		Content:    content,
 		Encrypted:  false,

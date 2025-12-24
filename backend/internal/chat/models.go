@@ -8,6 +8,7 @@ import (
 type Message struct {
 	ID          int        `json:"id"`
 	SenderID    int        `json:"sender_id"`
+	SenderName  string     `json:"sender_name,omitempty"`
 	ReceiverID  int        `json:"receiver_id"`
 	Content     string     `json:"content"`
 	Encrypted   bool       `json:"encrypted"`

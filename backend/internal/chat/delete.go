@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/yourusername/svara/internal/auth"
@@ -31,10 +32,11 @@ func (h *Handler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 	// Insert or replace record in deleted_conversations table
 	// This stores the timestamp of when the user deleted the conversation
 	// Messages sent BEFORE this timestamp will be hidden from the user
+	// IMPORTANT: Use Go time.Now() to match the format of sent_at in messages table
 	result, err := h.db.Exec(
 		`INSERT OR REPLACE INTO deleted_conversations (user_id, other_user_id, deleted_at)
-		 VALUES (?, ?, CURRENT_TIMESTAMP)`,
-		claims.UserID, otherUserID,
+		 VALUES (?, ?, ?)`,
+		claims.UserID, otherUserID, time.Now(),
 	)
 	if err != nil {
 		log.Printf("Failed to mark conversation as deleted: %v", err)

@@ -150,7 +150,9 @@ export function useWebSocket(token: string | null) {
       addMessage(payload);
       
       if (payload.sender_id !== currentUserId) {
-        updateConversationWithMessage(otherUserId, `User ${otherUserId}`, payload);
+        // Use sender_name from payload if available, otherwise fallback to generic name
+        const senderName = payload.sender_name || `User ${otherUserId}`;
+        updateConversationWithMessage(otherUserId, senderName, payload);
       } else {
         updateConversationLastMessage(otherUserId, payload);
       }
