@@ -124,6 +124,7 @@ export default function ChatPage() {
             <ConversationList
               conversations={filteredConversations}
               activeId={activeConversationId}
+              currentUserId={user?.id}
               onSelect={(userId) => {
                 setActiveConversation(userId);
                 markAsRead(userId);

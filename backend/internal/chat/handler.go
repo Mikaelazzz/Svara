@@ -51,6 +51,21 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 			 WHERE ((m2.sender_id = ? AND m2.receiver_id = u.id) OR (m2.sender_id = u.id AND m2.receiver_id = ?))
 			 AND (dc2.deleted_at IS NULL OR m2.sent_at > dc2.deleted_at)
 			 ORDER BY m2.sent_at DESC LIMIT 1) as last_message_time,
+			(SELECT sender_id FROM messages m2 
+			 LEFT JOIN deleted_conversations dc2 ON dc2.user_id = ? AND dc2.other_user_id = u.id
+			 WHERE ((m2.sender_id = ? AND m2.receiver_id = u.id) OR (m2.sender_id = u.id AND m2.receiver_id = ?))
+			 AND (dc2.deleted_at IS NULL OR m2.sent_at > dc2.deleted_at)
+			 ORDER BY m2.sent_at DESC LIMIT 1) as last_message_sender_id,
+			(SELECT delivered_at FROM messages m2 
+			 LEFT JOIN deleted_conversations dc2 ON dc2.user_id = ? AND dc2.other_user_id = u.id
+			 WHERE ((m2.sender_id = ? AND m2.receiver_id = u.id) OR (m2.sender_id = u.id AND m2.receiver_id = ?))
+			 AND (dc2.deleted_at IS NULL OR m2.sent_at > dc2.deleted_at)
+			 ORDER BY m2.sent_at DESC LIMIT 1) as last_message_delivered_at,
+			(SELECT read_at FROM messages m2 
+			 LEFT JOIN deleted_conversations dc2 ON dc2.user_id = ? AND dc2.other_user_id = u.id
+			 WHERE ((m2.sender_id = ? AND m2.receiver_id = u.id) OR (m2.sender_id = u.id AND m2.receiver_id = ?))
+			 AND (dc2.deleted_at IS NULL OR m2.sent_at > dc2.deleted_at)
+			 ORDER BY m2.sent_at DESC LIMIT 1) as last_message_read_at,
 			(SELECT COUNT(*) FROM messages m2 
 			 LEFT JOIN deleted_conversations dc2 ON dc2.user_id = ? AND dc2.other_user_id = u.id
 			 WHERE m2.sender_id = u.id AND m2.receiver_id = ? AND m2.read_at IS NULL
@@ -65,6 +80,9 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 		AND u.id != ?
 		ORDER BY last_message_time DESC
 	`, claims.UserID, claims.UserID, claims.UserID,
+		claims.UserID, claims.UserID, claims.UserID,
+		claims.UserID, claims.UserID, claims.UserID,
+		claims.UserID, claims.UserID, claims.UserID,
 		claims.UserID, claims.UserID, claims.UserID,
 		claims.UserID, claims.UserID,
 		claims.UserID, claims.UserID, claims.UserID,
@@ -81,6 +99,8 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var conv Conversation
 		var lastMessageContent, lastMessageTime sql.NullString
+		var lastMessageSenderID sql.NullInt64
+		var lastMessageDeliveredAt, lastMessageReadAt sql.NullTime
 
 		err := rows.Scan(
 			&conv.UserID,
@@ -89,6 +109,9 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 			&conv.LastSeen,
 			&lastMessageContent,
 			&lastMessageTime,
+			&lastMessageSenderID,
+			&lastMessageDeliveredAt,
+			&lastMessageReadAt,
 			&conv.UnreadCount,
 		)
 		if err != nil {
@@ -108,8 +131,15 @@ func (h *Handler) GetConversations(w http.ResponseWriter, r *http.Request) {
 				sentTime = time.Now()
 			}
 			conv.LastMessage = &Message{
-				Content: lastMessageContent.String,
-				SentAt:  sentTime,
+				Content:  lastMessageContent.String,
+				SentAt:   sentTime,
+				SenderID: int(lastMessageSenderID.Int64),
+			}
+			if lastMessageDeliveredAt.Valid {
+				conv.LastMessage.DeliveredAt = &lastMessageDeliveredAt.Time
+			}
+			if lastMessageReadAt.Valid {
+				conv.LastMessage.ReadAt = &lastMessageReadAt.Time
 			}
 		}
 

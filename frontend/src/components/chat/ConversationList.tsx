@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Pin } from 'lucide-react';
-import type { Conversation } from '@/types/chat';
+import { Pin, Check, CheckCheck } from 'lucide-react';
+import type { Conversation, Message } from '@/types/chat';
 import { useChatStore } from '@/store/chatStore';
 import api from '@/lib/api';
 import ContextMenu from './ContextMenu';
@@ -12,13 +12,29 @@ interface ConversationListProps {
   conversations: Conversation[];
   activeId: number | null;
   onSelect: (userId: number) => void;
+  currentUserId?: number;
 }
 
 export default function ConversationList({
   conversations,
   activeId,
   onSelect,
+  currentUserId,
 }: ConversationListProps) {
+  // Get message status icon for sent messages
+  const getMessageStatusIcon = (message: Message) => {
+    if (message.read_at) {
+      // Read - double check yellow/gold
+      return <CheckCheck className="w-3 h-3 text-yellow-500 flex-shrink-0" />;
+    } else if (message.delivered_at) {
+      // Delivered - double check gray
+      return <CheckCheck className="w-3 h-3 text-gray-400 flex-shrink-0" />;
+    } else {
+      // Sent - single check gray
+      return <Check className="w-3 h-3 text-gray-400 flex-shrink-0" />;
+    }
+  };
+
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -158,9 +174,14 @@ export default function ConversationList({
                   {formatTime(conv.last_message?.sent_at)}
                 </span>
               </div>
-              <p className="text-sm text-gray-600 truncate">
-                {conv.last_message?.content || 'No messages yet'}
-              </p>
+              <div className="flex items-center gap-1">
+                {conv.last_message && currentUserId && conv.last_message.sender_id === currentUserId && (
+                  getMessageStatusIcon(conv.last_message)
+                )}
+                <p className="text-sm text-gray-600 truncate flex-1">
+                  {conv.last_message?.content || 'No messages yet'}
+                </p>
+              </div>
             </div>
 
             {/* Unread Badge */}

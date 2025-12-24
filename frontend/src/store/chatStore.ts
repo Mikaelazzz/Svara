@@ -14,6 +14,7 @@ interface ChatState {
   markAsRead: (userId: number) => void;
   updateConversationWithMessage: (userId: number, userName: string, message: Message) => void;
   updateConversationLastMessage: (userId: number, message: Message) => void;
+  updateConversationMessageStatus: (messageId: number, status: 'delivered' | 'read') => void;
   updateUserStatus: (userId: number, status: 'online' | 'offline') => void;
   pinConversation: (userId: number) => void;
   deleteConversation: (userId: number) => void;
@@ -70,15 +71,29 @@ export const useChatStore = create<ChatState>((set) => ({
   updateMessage: (messageId, updates) => {
     set((state) => {
       const newMessages = new Map(state.messages);
+      let updatedConversations = state.conversations;
       
       for (const [userId, messages] of newMessages.entries()) {
-        const updatedMessages = messages.map(msg =>
-          msg.id === messageId ? { ...msg, ...updates } : msg
-        );
-        newMessages.set(userId, updatedMessages);
+        const messageIndex = messages.findIndex(msg => msg.id === messageId);
+        if (messageIndex !== -1) {
+          const updatedMessages = messages.map(msg =>
+            msg.id === messageId ? { ...msg, ...updates } : msg
+          );
+          newMessages.set(userId, updatedMessages);
+          
+          // If this is the last message, also update the conversation's last_message
+          if (messageIndex === messages.length - 1) {
+            updatedConversations = state.conversations.map(conv =>
+              conv.user_id === userId && conv.last_message
+                ? { ...conv, last_message: { ...conv.last_message, ...updates } }
+                : conv
+            );
+          }
+          break;
+        }
       }
 
-      return { messages: newMessages };
+      return { messages: newMessages, conversations: updatedConversations };
     });
   },
 
@@ -173,6 +188,47 @@ export const useChatStore = create<ChatState>((set) => ({
         // If not pinned, put at top of unpinned section
         return { conversations: [...pinnedConvs, targetConv, ...otherConvs] };
       }
+    });
+  },
+
+  // Update conversation's last_message status (for real-time status indicator updates)
+  updateConversationMessageStatus: (messageId, status) => {
+    set((state) => {
+      // First, find which conversation this message belongs to by checking messages Map
+      let targetUserId: number | null = null;
+      
+      for (const [userId, messages] of state.messages.entries()) {
+        const foundMessage = messages.find(m => m.id === messageId);
+        if (foundMessage) {
+          // Check if this is the last message for this user
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.id === messageId) {
+            targetUserId = userId;
+          }
+          break;
+        }
+      }
+
+      const conversations = state.conversations.map(conv => {
+        // Update if: 1) last_message.id matches, OR 2) this is the target conversation from messages
+        const shouldUpdate = 
+          (conv.last_message && conv.last_message.id === messageId) ||
+          (targetUserId !== null && conv.user_id === targetUserId && conv.last_message);
+        
+        if (shouldUpdate && conv.last_message) {
+          console.log('📬 Updating conversation status:', conv.user_id, status);
+          return {
+            ...conv,
+            last_message: {
+              ...conv.last_message,
+              ...(status === 'delivered' && { delivered_at: new Date().toISOString() }),
+              ...(status === 'read' && { read_at: new Date().toISOString() }),
+            }
+          };
+        }
+        return conv;
+      });
+      return { conversations };
     });
   },
 

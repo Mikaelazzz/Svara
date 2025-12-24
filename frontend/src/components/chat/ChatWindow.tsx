@@ -76,6 +76,25 @@ export default function ChatWindow({ userId, onClose, wsClient }: ChatWindowProp
     };
   }, [wsClient, userId]);
 
+  // Auto-mark incoming messages as read when chat window is open
+  useEffect(() => {
+    if (!wsClient) return;
+
+    const handleIncomingMessage = (payload: any) => {
+      // If the message is from the user we're chatting with and we don't have read_at yet
+      if (payload.sender_id === userId && !payload.read_at) {
+        console.log('📖 Auto-marking message as read:', payload.id);
+        wsClient.sendReceipt(payload.id, 'read');
+      }
+    };
+
+    wsClient.on('message', handleIncomingMessage);
+
+    return () => {
+      wsClient.off('message', handleIncomingMessage);
+    };
+  }, [wsClient, userId]);
+
   // Helper function to format time
   const formatTime = (lastSeen?: string) => {
     if (!lastSeen) return '';
@@ -99,12 +118,15 @@ export default function ChatWindow({ userId, onClose, wsClient }: ChatWindowProp
         const msgs = response.data.data || [];
         setMessages(userId, msgs);
         
-        // Mark messages as read
-        msgs.forEach((msg: any) => {
-          if (msg.sender_id === userId && !msg.read_at) {
-            markAsRead(msg.id);
-          }
-        });
+        // Mark unread messages as read via WebSocket
+        if (wsClient) {
+          msgs.forEach((msg: any) => {
+            if (msg.sender_id === userId && !msg.read_at) {
+              console.log('📖 Marking existing message as read:', msg.id);
+              wsClient.sendReceipt(msg.id, 'read');
+            }
+          });
+        }
         
         // Clear unread count in conversation list
         useChatStore.getState().markAsRead(userId);
@@ -119,7 +141,7 @@ export default function ChatWindow({ userId, onClose, wsClient }: ChatWindowProp
 
     loadMessages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]); // Only userId dependency to prevent infinite loop
+  }, [userId, wsClient]); // Only userId dependency to prevent infinite loop
 
   // Load other user info from conversations or fetch from API
   useEffect(() => {

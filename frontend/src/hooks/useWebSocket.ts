@@ -22,6 +22,7 @@ export function useWebSocket(token: string | null) {
   const updateMessage = useChatStore((state) => state.updateMessage);
   const updateConversationWithMessage = useChatStore((state) => state.updateConversationWithMessage);
   const updateConversationLastMessage = useChatStore((state) => state.updateConversationLastMessage);
+  const updateConversationMessageStatus = useChatStore((state) => state.updateConversationMessageStatus);
   const updateUserStatus = useChatStore((state) => state.updateUserStatus);
   const currentUserId = useAuthStore((state) => state.user?.id);
   
@@ -153,11 +154,19 @@ export function useWebSocket(token: string | null) {
         // Use sender_name from payload if available, otherwise fallback to generic name
         const senderName = payload.sender_name || `User ${otherUserId}`;
         updateConversationWithMessage(otherUserId, senderName, payload);
+        
+        // Check if user is currently viewing this conversation - if so, mark as read immediately
+        const activeConvId = useChatStore.getState().activeConversationId;
+        if (activeConvId === payload.sender_id) {
+          console.log('📖 Auto-marking as read (viewing conversation):', payload.id);
+          client.sendReceipt(payload.id, 'read');
+        } else {
+          // User not viewing this conversation - just mark as delivered
+          client.sendReceipt(payload.id, 'delivered');
+        }
       } else {
         updateConversationLastMessage(otherUserId, payload);
       }
-      
-      client.sendReceipt(payload.id, 'delivered');
     });
 
     client.on('message_sent', (payload: any) => {
@@ -172,10 +181,15 @@ export function useWebSocket(token: string | null) {
 
     client.on('receipt', (payload: { message_id: number; status: string }) => {
       console.log('📬 Receipt:', payload);
+      // Update message in messages list
       updateMessage(payload.message_id, {
         ...(payload.status === 'delivered' && { delivered_at: new Date().toISOString() }),
         ...(payload.status === 'read' && { read_at: new Date().toISOString() }),
       });
+      // Also update conversation's last_message for sidebar real-time update
+      if (payload.status === 'delivered' || payload.status === 'read') {
+        updateConversationMessageStatus(payload.message_id, payload.status as 'delivered' | 'read');
+      }
     });
 
     client.on('user_status', (payload: { user_id: number; status: 'online' | 'offline' }) => {
@@ -202,7 +216,7 @@ export function useWebSocket(token: string | null) {
       setIsConnected(false);
       clientRef.current = null;
     };
-  }, [token, addMessage, updateMessage, updateConversationWithMessage, updateConversationLastMessage, updateUserStatus, currentUserId, setCurrentCall, setCallStatus, clearCurrentCall]);
+  }, [token, addMessage, updateMessage, updateConversationWithMessage, updateConversationLastMessage, updateConversationMessageStatus, updateUserStatus, currentUserId, setCurrentCall, setCallStatus, clearCurrentCall]);
 
   // Expose isCallerRef setter for CallManager
   const setIsCaller = (value: boolean) => {

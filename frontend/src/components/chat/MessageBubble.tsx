@@ -18,10 +18,13 @@ export default function MessageBubble({ message, isOwn }: MessageBubbleProps) {
 
   const getDeliveryStatus = () => {
     if (message.read_at) {
-      return <CheckCheck className="w-4 h-4 text-blue-500" />;
+      // Read - double check yellow/gold
+      return <CheckCheck className="w-4 h-4 text-yellow-500" />;
     } else if (message.delivered_at) {
+      // Delivered - double check gray
       return <CheckCheck className="w-4 h-4 text-gray-400" />;
     } else {
+      // Sent - single check gray
       return <Check className="w-4 h-4 text-gray-400" />;
     }
   };
