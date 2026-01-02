@@ -1,198 +1,132 @@
-# Svara - Real-time Messaging Application
+# Svara - Aplikasi Messaging Real-time
 
-Svara adalah aplikasi messaging real-time dengan fitur chat, voice/video call menggunakan WebRTC, dibangun dengan Go (backend) dan Next.js (frontend).
+**Svara** adalah platform komunikasi real-time yang mendukung pesan teks dan panggilan suara. Proyek ini dibangun menggunakan **Go** pada sisi *backend* dan **Next.js** pada sisi *frontend* dengan fokus pada performa dan skalabilitas.
 
-## 🚀 Features
+## 🚀 Fitur Utama
 
-### Phase 1: Core Messaging (MVP) ✅
-- ✅ Authentication dengan JWT (Phone/Email)
-- ✅ Real-time text chat dengan WebSocket
-- ✅ Status indicators (Online, Typing, Last Seen)
-- ✅ Message receipts (Sent ✓, Delivered ✓✓, Read ✓✓)
+### ✅ Messaging Utama
 
-### Phase 2: Audio & Video Call (In Progress)
-- 🔄 1-on-1 Voice Call (WebRTC)
-- 🔄 1-on-1 Video Call (WebRTC)
-- 🔄 Peer-to-Peer connection
+* **Autentikasi Aman**: Registrasi dan login pengguna menggunakan JWT (Phone/Email).
+* **Chat Real-time**: Komunikasi teks instan yang dibangun di atas protokol WebSocket.
+* **Indikator Status**: Fitur untuk melihat status Online, sedang mengetik (*Typing*), serta informasi *Last Seen*.
+* **Laporan Pesan**: Indikator status pesan yang lengkap mulai dari Terkirim (✓), Sampai (✓✓), hingga Dibaca (✓✓ biru).
 
-### Phase 3: Advanced Features (Planned)
-- 📋 Group Call dengan SFU
-- 📋 File Sharing via WebRTC Data Channels
-- 📋 End-to-End Encryption (E2EE)
+### ✅ Panggilan Audio
 
-## 📁 Project Structure
-
-```
-svara/
-├── backend/          # Go backend server
-│   ├── cmd/         # Application entry points
-│   ├── internal/    # Private application code
-│   │   ├── auth/   # Authentication
-│   │   ├── chat/   # WebSocket chat
-│   │   ├── webrtc/ # WebRTC signaling
-│   │   ├── user/   # User management
-│   │   ├── database/ # Database layer
-│   │   └── config/ # Configuration
-│   └── pkg/        # Public libraries
-│
-├── frontend/        # Next.js frontend
-│   └── src/
-│       ├── app/    # Next.js App Router
-│       ├── components/ # React components
-│       ├── lib/    # Utilities & API clients
-│       ├── hooks/  # Custom hooks
-│       ├── store/  # State management
-│       └── types/  # TypeScript types
-│
-└── docs/           # Documentation
-```
+* **Panggilan Suara 1-on-1**: Komunikasi suara berkualitas tinggi menggunakan teknologi WebRTC.
+* **Koneksi Peer-to-Peer**: Memungkinkan sambungan langsung antar pengguna untuk memastikan latensi yang sangat rendah.
 
 ## 🛠️ Tech Stack
 
 ### Backend
-- **Language**: Go 1.21+
-- **Router**: Chi
-- **WebSocket**: gorilla/websocket
-- **WebRTC**: pion/webrtc
-- **Database**: SQLite
-- **Authentication**: JWT
+
+* **Bahasa**: Go 1.21+
+* **Router**: Chi v5
+* **WebSocket**: Gorilla WebSocket
+* **WebRTC**: Pion WebRTC
+* **Database**: SQLite
+* **Autentikasi**: JWT (golang-jwt)
 
 ### Frontend
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: TailwindCSS
-- **State Management**: Zustand
-- **WebSocket**: Native WebSocket API
-- **WebRTC**: Native WebRTC API
 
-## 🚀 Quick Start
+* **Framework**: Next.js 14/15 (App Router)
+* **Bahasa**: TypeScript
+* **Styling**: TailwindCSS
+* **State Management**: Zustand
+* **HTTP Client**: Axios
 
-### Backend Setup
+## 📁 Struktur Proyek
 
-1. Navigate to backend directory:
+```text
+svara/
+├── backend/          # Server Go
+│   ├── cmd/          # Entry point aplikasi (server & migrasi)
+│   ├── internal/     # Kode aplikasi privat (auth, chat, webrtc, database)
+│   └── pkg/          # Library publik dan utilitas sistem
+├── frontend/         # Aplikasi Next.js
+│   ├── src/app/      # Next.js App Router (Halaman & Layout)
+│   ├── src/components/ # Komponen UI React (Chat & Panggilan)
+│   └── src/store/    # State management menggunakan Zustand
+
+```
+
+## ⚙️ Persiapan dan Instalasi
+
+### 1. Persiapan Backend
+
+Masuk ke direktori backend:
+
 ```bash
 cd backend
+
 ```
 
-2. Install dependencies:
+Instal dependensi:
+
 ```bash
 go mod download
+
 ```
 
-3. Setup environment:
+Konfigurasi environment:
+
 ```bash
 cp .env.example .env
-# Edit .env file
+# Sesuaikan JWT_SECRET dan DATABASE_PATH di file .env
+
 ```
 
-4. Run migrations:
+Jalankan migrasi dan mulai server:
+
 ```bash
 go run cmd/server/main.go migrate
-```
-
-5. Start server:
-```bash
 go run cmd/server/main.go
+
 ```
 
-Server akan berjalan di `http://localhost:8080`
+*Server akan berjalan di `http://localhost:8080*`.
 
-### Frontend Setup
+### 2. Persiapan Frontend
 
-1. Navigate to frontend directory:
+Masuk ke direktori frontend:
+
 ```bash
 cd frontend
+
 ```
 
-2. Install dependencies:
+Instal dependensi:
+
 ```bash
 npm install
+
 ```
 
-3. Setup environment:
+Konfigurasi environment:
+
 ```bash
 cp .env.example .env.local
-# Edit .env.local file
+# Sesuaikan NEXT_PUBLIC_API_URL ke alamat backend
+
 ```
 
-4. Start development server:
+Jalankan server pengembangan:
+
 ```bash
 npm run dev
+
 ```
 
-Aplikasi akan berjalan di `http://localhost:3000`
+*Aplikasi akan berjalan di `http://localhost:3000*`.
 
-## 📖 Documentation
+## 🔌 Endpoints API Utama
 
-Lihat folder `docs/` untuk dokumentasi lengkap:
-- [API Documentation](docs/API.md)
-- [WebSocket Protocol](docs/WEBSOCKET.md)
-- [WebRTC Signaling](docs/WEBRTC.md)
-- [Database Schema](docs/DATABASE.md)
-- [Architecture](docs/ARCHITECTURE.md)
+### Autentikasi
 
-## 🗄️ Database Schema
+* `POST /api/auth/register`: Pendaftaran pengguna baru.
+* `POST /api/auth/login`: Masuk untuk mendapatkan token akses JWT.
 
-### Users
-- User authentication (phone/email)
-- Profile information
-- Online status tracking
+### Komunikasi Real-time
 
-### Messages
-- Message content
-- Delivery & read receipts
-- Encryption support
-
-### Calls
-- Call history
-- Call type (audio/video)
-- Call duration tracking
-
-## 🔐 Environment Variables
-
-### Backend (.env)
-```
-PORT=8080
-JWT_SECRET=your-secret-key
-DATABASE_PATH=./svara.db
-ALLOWED_ORIGINS=http://localhost:3000
-```
-
-### Frontend (.env.local)
-```
-NEXT_PUBLIC_API_URL=http://localhost:8080
-NEXT_PUBLIC_WS_URL=ws://localhost:8080
-```
-
-## 📝 Development Roadmap
-
-- [x] Project planning & architecture
-- [x] Backend structure setup
-- [x] Frontend structure setup
-- [x] Database schema design
-- [x] JWT authentication system
-- [ ] WebSocket chat implementation
-- [ ] WebRTC signaling server
-- [ ] Frontend chat UI
-- [ ] Voice/Video call UI
-- [ ] Group call with SFU
-- [ ] File sharing
-- [ ] E2EE implementation
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read our contributing guidelines first.
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
-## 👥 Authors
-
-Your Name - Initial work
-
-## 🙏 Acknowledgments
-
-- Pion WebRTC team
-- Go Chi router
-- Next.js team
+* `WS /ws/chat`: Koneksi WebSocket untuk pertukaran pesan chat.
+* `WS /ws/webrtc`: Koneksi WebSocket untuk signaling panggilan audio.
