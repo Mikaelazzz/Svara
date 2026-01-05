@@ -206,7 +206,7 @@ export function useWebSocket(token: string | null) {
         setWsClient(client);
       })
       .catch((error) => {
-        console.error('❌ WebSocket connection failed:', error);
+        // console.error('❌ WebSocket connection failed:', error);
         setIsConnected(false);
       });
 

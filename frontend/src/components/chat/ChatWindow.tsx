@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Phone, Video } from 'lucide-react';
+import { Send, Loader2, Phone } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
 import { useCallStore } from '@/store/callStore';
@@ -305,13 +305,6 @@ export default function ChatWindow({ userId, onClose, wsClient }: ChatWindowProp
             title="Voice Call"
           >
             <Phone className="w-5 h-5 text-gray-600" />
-          </button>
-          <button 
-            onClick={() => handleStartCall('video')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition" 
-            title="Video Call"
-          >
-            <Video className="w-5 h-5 text-gray-600" />
           </button>
         </div>
       </div>
